@@ -32,4 +32,4 @@ If you are not in the `dialout` group, you may need to add yourself using
 ```
 $ sudo adduser $(whoami) dialout
 ```
-where `$(whoami)` evaluates to your user name.
+where `$(whoami)` evaluates to your user name.  Log in again for the change to take effect.
