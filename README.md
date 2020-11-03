@@ -6,11 +6,7 @@ This is a simple matplotlib based scrtipt for visualization of data from a testi
   - [matplotlib](https://matplotlib.org/)
   - [serial](https://pypi.org/project/pyserial/)
   
-Both *numpy* and *matplotlib* are included in the [scipy](https://www.scipy.org/) distribution.  It is preferable to install them using your distribution's package manager and official repositories.  For Ubuntu, you can do this using
-```
-$ sudo apt install python3-scipy python3-serial
-```
-Alternatively you can install them using pip:
+Both *numpy* and *matplotlib* are included in the [scipy](https://www.scipy.org/) distribution.  It is preferable to install them using your distribution's package manager and official repositories.  Alternatively you can install them using pip:
 ```
 $ python3 -m pip install scipy serial
 ```
@@ -22,3 +18,18 @@ There are a number of command line options available; use `-h` to list them.  In
 ```
 $ python3 skinvis.py -p /dev/ttyUSB0
 ```
+
+## Notes for Ubuntu
+It is usually preferable to install python packages using your Linux distribution's package manager.  For Ubuntu, you can do this using
+```
+$ sudo apt install python3-numpy python3-matplotlib python3-serial
+```
+In order for the `serial` package to work, you will need permission to use the serial device.  Check your system group memberships with
+```
+$ groups
+```
+If you are not in the `dialout` group, you may need to add yourself using
+```
+$ sudo adduser $(whoami) dialout
+```
+where `$(whoami)` evaluates to your user name.
