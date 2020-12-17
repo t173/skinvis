@@ -14,8 +14,9 @@ import argparse
 import threading
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
-from itertools import chain
+from itertools import product, chain
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -29,6 +30,7 @@ placement = np.array([
     [8, 7, 15, 16],
 ]) - 1
 
+pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
 cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
 
 LINESTYLE = {
@@ -125,25 +127,83 @@ def allline_init(sensor):
     '''
     Plots initial layout artists
     '''
-    nrows = 2*placement.shape[0]
-    ncols = (sensor.patches//2)*placement.shape[1]
-    fig, axs = plt.subplots(nrows, ncols, sharex=False, sharey=True)
-    fig.set_figwidth(cmdline.figsize[0])
-    fig.set_figheight(cmdline.figsize[1])
-
     margin = 0.05
+    adjust = { 'wspace': 0.01, 'hspace': 0.01 }
+    patch_rows = 2
+    patch_cols = sensor.patches//2
+    cell_rows, cell_cols = placement.shape
+    # nrows = 2*placement.shape[0]
+    # ncols = (sensor.patches//2)*placement.shape[1]
+    fig = plt.figure(figsize=cmdline.figsize, constrained_layout=False)
+    patch_grid = fig.add_gridspec(patch_rows, patch_cols, **adjust)
+
     plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0.01, hspace=0.01)
-    
     lines = {}
     axes = {}
-    for patch in range(1, sensor.patches + 1):
-        for cell in range(sensor.cells):
-            axes[patch, cell] = plt.subplot(nrows, ncols, sensor.cells*(patch - 1) + cell_to_pos[cell] + 1)
+    for patch_pos in range(patch_rows*patch_cols):
+        patch = patch_pos + 1
+        cell_grid = gridspec.GridSpecFromSubplotSpec(cell_rows, cell_cols, subplot_spec=patch_grid[patch_pos], **adjust)
+        # ax = plt.Subplot(fig, patch_grid[patch_pos])
+        # ax.axis('off')
+        # ax.set_title(str(patch))
+        for cell_pos, (cell_row, cell_col) in enumerate(product(range(cell_rows), range(cell_cols))):
+            cell = pos_to_cell[cell_pos]
+            ax = fig.add_subplot(cell_grid[cell_pos])
+            axes[patch, cell] = ax
+            #ax.axis('off')
+            lines[patch, cell] = ax.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
+            ax.set_ylim(cmdline.zmin, cmdline.zmax)
+            ax.text(0.1, 0.9, str(patch) + ',' + str(cell), transform=ax.transAxes, fontsize=10)
+            fig.add_subplot(ax)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+            # #matplotlib v3.3.3 version?
+            # cell_grid = patch_grid[patch_row, patch_col].subgridspec(cell_rows, cell_cols, wspace=0.01, hspace=0.01)
+            # axs = cell_grid.subplots()
+            # patch = patch_row*patch_cols + patch_col + 1
+            # for (cell_row, cell_col), ax in np.ndenumerate(axs):
+            #     cell = pos_to_cell[cell_row*cell_cols + cell_col]
+            #     #axes[patch, cell] = plt.subplot(nrows, ncols, sensor.cells*(patch - 1) + cell_to_pos[cell] + 1)
+            #     axes[patch, cell] = ax
+            #     ax.axis('off')
+            #     lines[patch, cell] = ax.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
+            #     ax.set_ylim(cmdline.zmin, cmdline.zmax)
+            #     ax.text(0.1, 0.9, str(patch) + ',' + str(cell), transform=ax.transAxes, fontsize=10)
+
+    for ax in fig.get_axes():
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        if ax.is_first_row():
+            ax.spines['top'].set_visible(True)
+        if ax.is_last_row():
+            ax.spines['bottom'].set_visible(True)
+        if ax.is_first_col():
+            ax.spines['left'].set_visible(True)
+        if ax.is_last_col():
+            ax.spines['right'].set_visible(True)
+    # # Only outer grid lines
+    # for ax in fig.get_axes():
+    #     ax.spines['top'].set_visible(ax.is_first_row())
+    #     ax.spines['bottom'].set_visible(ax.is_last_row())
+    #     ax.spines['left'].set_visible(ax.is_first_col())
+    #     ax.spines['right'].set_visible(ax.is_last_col())
+
+    # fig, axs = plt.subplots(nrows, ncols, sharex=False, sharey=True)
+    # fig.set_figwidth(cmdline.figsize[0])
+    # fig.set_figheight(cmdline.figsize[1])
+
+    # margin = 0.05
+    # plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0.01, hspace=0.01)
+    
+    # for patch in range(1, sensor.patches + 1):
+    #     for cell in range(sensor.cells):
+    #         axes[patch, cell] = plt.subplot(nrows, ncols, sensor.cells*(patch - 1) + cell_to_pos[cell] + 1)
                 
-            plt.axis('off')
-            lines[patch, cell] = plt.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
-            plt.ylim(cmdline.zmin, cmdline.zmax)
-            axes[patch, cell].text(0.1, 0.9, str(patch) + ',' + str(cell), transform=axes[patch, cell].transAxes, fontsize=10)
+    #         plt.axis('off')
+    #         lines[patch, cell] = plt.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
+    #         plt.ylim(cmdline.zmin, cmdline.zmax)
+    #         axes[patch, cell].text(0.1, 0.9, str(patch) + ',' + str(cell), transform=axes[patch, cell].transAxes, fontsize=10)
     stats = None
     return fig, (lines, axes, stats)
 
