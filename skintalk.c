@@ -2,6 +2,8 @@
 //
 // Skin serial communication interface
 
+#define _XOPEN_SOURCE 700
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -13,8 +15,9 @@
 #include <errno.h>
 #include <pthread.h>
 //#include <termios.h>
-#include <sys/time.h>
-#include <arpa/inet.h>
+//#include <sys/time.h>
+#include <time.h>
+//#include <arpa/inet.h>
 
 #include "util.h"
 #include "skintalk.h"
@@ -154,11 +157,16 @@ write_csv_header(skin_t *skin, FILE *f) {
 
 void
 write_csv_row(skin_t *skin, FILE *f) {
-	struct timeval now;
-	if ( !gettimeofday(&now, NULL) ) {
+	static int warned = 0;
+	struct timespec now;
+	if ( clock_gettime(CLOCK_REALTIME, &now) < 0 ) {
+		if ( !warned ) {
+			WARNING("clock_gettime() failed: %s", strerror(errno));
+			warned = 1;
+		}
 		return;
 	}
-	fprintf(f, "%d.%06d", (int)now.tv_sec, (int)now.tv_usec);
+	fprintf(f, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
 			ring_t *ring = &RING_AT(skin, p, c);
@@ -166,6 +174,7 @@ write_csv_row(skin_t *skin, FILE *f) {
 		}
 	}
 	fprintf(f, "\n");
+	//fflush(f);
 }
 
 //--------------------------------------------------------------------
@@ -188,11 +197,12 @@ skin_reader(void *args) {
 	// Start logger
 	FILE *log = NULL;
 	if ( skin->log ) {
-		if ( !(log = fopen(skin->log, "w")) ) {
+		if ( !(log = fopen(skin->log, "wt")) ) {
 			WARNING("Cannot open log file %s\n%s", skin->log, strerror(errno));
-			return NULL;
+		} else {
+			DEBUGMSG("Logging to %s", skin->log);
+			write_csv_header(skin, log);
 		}
-		write_csv_header(skin, log);
 	}
 
 	transmit_char(fd, START_CODE);
@@ -210,19 +220,24 @@ skin_reader(void *args) {
 			continue;
 		}
 		get_record(&record, buffer + pos);
-		if ( log ) {
-			//fwrite(buffer + pos, sizeof(*buffer), RECORD_SIZE, log);
-			write_csv_row(skin, log);
-		}
 		pos += RECORD_SIZE;
 
-		// Note: patch numbers from device start at 1
-		if ( record.patch > 0 && record.patch - 1 < skin->num_patches && record.cell < skin->num_cells ) {
-			//printf("patch=%d  cell=%d  value=%.0f\n", record.patch, record.cell, RING_AT(skin, record.patch - 1, record.cell).expavg);
+		int patch = 0;
+		if ( record.cell < skin->num_cells ) {
+			if ( skin->num_patches > 1 && record.patch > 0 && record.patch <= skin->num_patches ) {
+				// Note: patch numbers from device start at 1
+				patch = record.patch - 1;
+			}
+
 			pthread_mutex_lock(&skin->lock);
-			ring_write(&RING_AT(skin, record.patch - 1, record.cell), record.value);
+			ring_write(&RING_AT(skin, patch, record.cell), record.value);
 			pthread_mutex_unlock(&skin->lock);
 			skin->total_records++;
+
+			// Append to log
+			if ( log && !skin->calibrating && patch + 1 == skin->num_patches && record.cell + 1 == skin->num_cells ) {
+				write_csv_row(skin, log);
+			}
 		}
 	}
 	transmit_char(fd, STOP_CODE);
@@ -240,7 +255,7 @@ skin_start(skin_t *skin) {
 		WARNING("Cannot initilize mutex");
 		return 0;
 	}
-  if ( pthread_create(&skin->reader, NULL, skin_reader, skin) != 0 ) {
+	if ( pthread_create(&skin->reader, NULL, skin_reader, skin) != 0 ) {
 		WARNING("Cannot start reader thread");
 		return 0;
 	}
@@ -296,6 +311,7 @@ void
 skin_calibrate_start(skin_t *skin) {
 	DEBUGMSG("skin_calibrate_start()");
 	pthread_mutex_lock(&skin->lock);
+	skin->calibrating = 1;
 	for ( int p=0; p < skin->num_patches; ++p )
 		for ( int c=0; c < skin->num_cells; ++c )
 			ring_calibrate_start(&RING_AT(skin, p, c));
@@ -309,6 +325,7 @@ skin_calibrate_stop(skin_t *skin) {
 	for ( int p=0; p < skin->num_patches; ++p )
 		for ( int c=0; c < skin->num_cells; ++c )
 			ring_calibrate_stop(&RING_AT(skin, p, c));
+	skin->calibrating = 0;
 	pthread_mutex_unlock(&skin->lock);
 }
 

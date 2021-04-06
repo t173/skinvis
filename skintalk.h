@@ -21,6 +21,7 @@ typedef struct skin {
 	pthread_t reader;
 	pthread_mutex_t lock;
 	int shutdown;
+	int calibrating;       // whether currently calibrating
 
 	// Performance statistics
 	long long total_bytes;   // odometer of bytes read from device

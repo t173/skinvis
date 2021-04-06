@@ -43,7 +43,7 @@ total_frames = 0
 
 def parse_cmdline():
     parser = argparse.ArgumentParser()
-    parser.add_argument('config', choices=['test', 'octocan'], default='octocan', nargs='?', help='use configuration');
+    parser.add_argument('config', choices=['test', 'octocan'], default='test', nargs='?', help='use configuration');
     parser.add_argument('--verbose', '-v', action='store_true', help='print more information')
 
     ser = parser.add_argument_group('Device configuration options')
@@ -51,12 +51,13 @@ def parse_cmdline():
     ser.add_argument('--patches', '-p', type=int, default=1, help='number of sensor patches')
     ser.add_argument('--cells', '-c', type=int, default=16, help='number of cells per patch')
     #ser.add_argument('--baud', '-b', type=int, default=2000000, help='use baud rate')
-    ser.add_argument('--history', '-n', metavar='N', type=int, default=256, help='store N of the last values read')
+    ser.add_argument('--history', '-n', metavar='N', type=int, default=1024, help='store N of the last values read')
     ser.add_argument('--alpha', '-a', type=float, default=1, help='set alpha (0..1] for exponential averaging fall off')
+    ser.add_argument('--log', '-l', type=str, default=None, help='log data to CSV file')
 
     plot = parser.add_argument_group('Plotting and visualization options')
     plot.add_argument('--style', choices=['line', 'bar', 'mesh'], default='line', help='select plotting style')
-    plot.add_argument('--delay', type=float, default=150, help='delay between plot updates in milliseoncds')
+    plot.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
     plot.add_argument('--threshold', metavar='VALUE', type=int, default=None, help='emphasis activity based on threshold value')
     plot.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=None, help='set figure size in inches')
     plot.add_argument('--dup', type=int, help='mimic multiple patches by duplicating first patch DUP times')
@@ -104,9 +105,6 @@ def line_init(sensor, patch):
             plt.ylim(cmdline.zmin, cmdline.zmax)
             pos += 1
             axes[index].text(0.1, 0.9, str(index), transform=axes[index].transAxes, fontsize=12)
-    # stats = plt.text(1 - margin, 0.5*margin, '',
-    #                  ha='right', va='center', transform=fig.transFigure)
-    #return fig, lines, axes, stats
     stats = None
     return fig, (lines, axes, stats)
 
@@ -129,8 +127,8 @@ def allline_init(sensor):
     '''
     margin = 0.05
     adjust = { 'wspace': 0.01, 'hspace': 0.01 }
-    patch_rows = 2
-    patch_cols = sensor.patches//2
+    patch_rows = 2 if sensor.patches > 4 else 1
+    patch_cols = sensor.patches//2 if sensor.patches > 4 else sensor.patches
     cell_rows, cell_cols = placement.shape
     # nrows = 2*placement.shape[0]
     # ncols = (sensor.patches//2)*placement.shape[1]
@@ -352,6 +350,8 @@ def main():
     global shutdown
     sensor = skin.Skin(patches=cmdline.patches, cells=cmdline.cells, device=cmdline.device, history=cmdline.history)
     sensor.set_alpha(cmdline.alpha)
+    if cmdline.log:
+        sensor.log(cmdline.log)
     sensor.start()
 
     sensor.calibrate_start()

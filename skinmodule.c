@@ -193,6 +193,19 @@ Skin_calibrate_stop(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	return Py_None;
 }
 
+static PyObject *
+Skin_log(SkinObject *self, PyObject *args) {
+	DEBUGMSG("Skin_log()");
+	char *filename;
+	if ( !self || !PyArg_ParseTuple(args, "s", &filename) ) {
+		WARNING("Skin_log() could not parse argument");
+		return NULL;
+	}
+	skin_log_stream(&self->skin, filename);
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -202,6 +215,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "set_alpha", (PyCFunction)Skin_set_alpha, METH_VARARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Sets alpha for exponential averaging" },
+	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ NULL }
 };
 
