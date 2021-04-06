@@ -7,7 +7,7 @@
 
 import sys
 import struct
-import serial
+#import serial
 import time
 import datetime
 import argparse
