@@ -1,9 +1,9 @@
-// skintalk.c -*-C-*- 
+// util.h -*-C-*- 
 //
-// Skin serial communication interface
+// Utility macros
 
-#ifndef __UTIL_H
-#define __UTIL_H
+#ifndef UTIL_H_
+#define UTIL_H_
 
 #define FATAL(msg, ...) do {\
 		fprintf(stderr, "FATAL: " msg "\n", ##__VA_ARGS__); \
@@ -19,4 +19,4 @@
 #define DEBUGMSG(msg, ...)
 #endif
 
-#endif /// __UTIL_H
+#endif /// UTIL_H_
