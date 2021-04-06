@@ -17,11 +17,13 @@
 
 skin_t skin;
 
-void fullstop(int signum) {
+void
+fullstop(int signum) {
 	skin_stop(&skin);
 }
 
-int main(int argc, char *argv[]) {
+int
+main(int argc, char *argv[]) {
 	parse_cmdline(argc, argv);
 	if ( !skin_init(&skin, cmdline.patches, cmdline.cells, cmdline.device, cmdline.history) ) {
 		FATAL("Cannot initialize skin structure");

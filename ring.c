@@ -75,7 +75,8 @@ ring_calibrate_stop(ring_t *ring) {
 	ring->pos = 0;
 }
 
-void ring_calibrate_disable(ring_t *ring) {
+void
+ring_calibrate_disable(ring_t *ring) {
 	ring->calibration = 0;
 	ring->calibrating = 0;
 }

@@ -40,18 +40,20 @@ typedef struct record {
 	int32_t value;
 } record_t;
 
-static void transmit_char(int fd, char code) {
+static void
+transmit_char(int fd, char code) {
 	if ( write(fd, &code, 1) < 0 ) {
 		WARNING("Cannot write to device");
 	}
 }
 
-static int is_record_start(uint8_t *p) {
-//	return ((p[0] & 0xF0) == 0x10) && ((p[RECORD_SIZE] & 0xF0) == 0x10);
+static int
+is_record_start(uint8_t *p) {
 	return (p[0] == RECORD_START) && (p[RECORD_SIZE] == RECORD_START);
 }
 
-inline static int32_t convert_24to32(uint8_t *src) {
+inline static int32_t
+convert_24to32(uint8_t *src) {
 	// input is bytes in big-endian: MSB, middle, LSB
 	int32_t v = src[0];
 	v <<= 8;
@@ -64,37 +66,16 @@ inline static int32_t convert_24to32(uint8_t *src) {
 	return v;
 }
 
-static void get_record(struct record *dst, uint8_t *src) {
+static void
+get_record(struct record *dst, uint8_t *src) {
 	dst->patch = (src[1] >> 4);
 	dst->cell = src[1] & 0x0F;
-
-	/* // src[2..4] is 24 bits of network order (big endian) signed value. */
-	/* // Here we assume a little-endian host, reverse the order, and sign */
-	/* // extend to 32 bits. */
-	/* uint8_t stage[4]; */
-	/* stage[0] = src[4]; */
-	/* stage[1] = src[3]; */
-	/* stage[2] = src[2]; */
-	/* stage[3] = (stage[2] & (1<<7)) ? 0xFF : 0x00; */
-
-	/* //dst->value = *(int32_t *)stage; */
-	/* /\* uint8_t stage[4] = {}; *\/ */
-	/* /\* memcpy(&stage[1], &src[2], 3); *\/ */
-	/* /\* stage[0] = (stage[1] & (1<<7)) ? 0xFF : 0x00; *\/ */
-	/* int32_t value = 0; */
-	/* memcpy(&value, stage, 4); */
-	/* //dst->value = value; */
 	dst->value = convert_24to32(&src[2]);
-
-//#ifdef DEBUG
-//#if (DEBUG >= 2)
-	//printf(" %02X %02X %02X %02X %02X patch=%01X cell=%01X value=%08X (%d)\n", src[0], src[1], src[2], src[3], src[4], dst->patch, dst->cell, dst->value, dst->value);
-//#endif
-//#endif
 }
 
 // Wrapper for read(2)
-static size_t read_bytes(int fd, void *dst, size_t count) {
+static size_t
+read_bytes(int fd, void *dst, size_t count) {
 	size_t pos = 0;
 	size_t read_count = 0;
 	ssize_t bytes_read;
@@ -186,38 +167,10 @@ skin_reader(void *args) {
 		}
 	}
 
-	//struct timeval before, now;
-	//long long bytes_before = total_bytes;
-	//long long records_before = records_read;
-	//gettimeofday(&before, NULL);
-
 	transmit_char(fd, START_CODE);
 	skin->total_bytes += read_bytes(fd, buffer, BUFFER_SIZE);
 
 	for ( int pos=0; !skin->shutdown; ) {
-		/* if ( cmdline.verbose && records_read % 10000 == 0 ) {  */
-		/* 	gettimeofday(&now, NULL); */
-		/* 	struct timeval delta; */
-		/* 	delta.tv_sec = now.tv_sec - before.tv_sec; */
-		/* 	if ( now.tv_usec < before.tv_usec ) { */
-		/* 		delta.tv_sec--; */
-		/* 		delta.tv_usec = 1000000 + now.tv_usec - before.tv_usec; */
-		/* 	} else { */
-		/* 		delta.tv_usec = now.tv_usec - before.tv_usec; */
-		/* 	} */
-		/* 	const long long bytes_since = total_bytes - bytes_before; */
-		/* 	const double time_delta = delta.tv_sec + 1e-6*delta.tv_usec; */
-		/* 	const double rate_KB = bytes_since/time_delta/1024; */
-		/* 	const long long records_since = records_read - records_before; */
-		/* 	const double records_per_sec = records_since/time_delta; */
-			
-		/* 	printf("reading %.1f KB/s, %.0f cell/s\n", rate_KB, records_per_sec); */
-		/* 	bytes_before = total_bytes; */
-		/* 	records_before = records_read; */
-		/* 	memcpy(&before, &now, sizeof(now)); */
-		/* } */
-
-	next_pos:
 		if ( pos + RECORD_SIZE > BUFFER_SIZE ) {
 			// If out of space, roll back the tape and refill it
 			memmove(buffer, buffer + pos, BUFFER_SIZE - pos);
@@ -226,7 +179,7 @@ skin_reader(void *args) {
 		}
 		if ( !is_record_start(buffer + pos) ) {
 			pos++;
-			goto next_pos;
+			continue;
 		}
 		get_record(&record, buffer + pos);
 		if ( log ) {

@@ -2,8 +2,8 @@
 //
 // Command line parsing
 
-#ifndef __CMDLINE_H
-#define __CMDLINE_H
+#ifndef CMDLINE_H_
+#define CMDLINE_H_
 
 extern struct cmdline {
 	char *device;   // serial device
@@ -17,4 +17,4 @@ extern struct cmdline {
 
 void parse_cmdline(int argc, char *argv[]);
 
-#endif // __CMDLINE_H
+#endif // CMDLINE_H_
