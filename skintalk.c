@@ -141,6 +141,33 @@ skin_free(skin_t *skin) {
 	free(skin->rings);
 }
 
+void
+write_csv_header(skin_t *skin, FILE *f) {
+	fprintf(f, "time");
+	for ( int p=0; p < skin->num_patches; p++ ) {
+		for ( int c=0; c < skin->num_cells; c++ ) {
+			fprintf(f, ",patch%d_cell%d", p, c);
+		}
+	}
+	fprintf(f, "\n");
+}
+
+void
+write_csv_row(skin_t *skin, FILE *f) {
+	struct timeval now;
+	if ( !gettimeofday(&now, NULL) ) {
+		return;
+	}
+	fprintf(f, "%d.%06d", (int)now.tv_sec, (int)now.tv_usec);
+	for ( int p=0; p < skin->num_patches; p++ ) {
+		for ( int c=0; c < skin->num_cells; c++ ) {
+			ring_t *ring = &RING_AT(skin, p, c);
+			fprintf(f, ",%d", (int)ring->buf[(ring->pos - 1) % ring->capacity]);
+		}
+	}
+	fprintf(f, "\n");
+}
+
 //--------------------------------------------------------------------
 
 // pthread function, reads from device
@@ -161,10 +188,11 @@ skin_reader(void *args) {
 	// Start logger
 	FILE *log = NULL;
 	if ( skin->log ) {
-		if ( !(log = fopen(skin->log, "wb")) ) {
+		if ( !(log = fopen(skin->log, "w")) ) {
 			WARNING("Cannot open log file %s\n%s", skin->log, strerror(errno));
 			return NULL;
 		}
+		write_csv_header(skin, log);
 	}
 
 	transmit_char(fd, START_CODE);
@@ -183,7 +211,8 @@ skin_reader(void *args) {
 		}
 		get_record(&record, buffer + pos);
 		if ( log ) {
-			fwrite(buffer + pos, sizeof(*buffer), RECORD_SIZE, log);
+			//fwrite(buffer + pos, sizeof(*buffer), RECORD_SIZE, log);
+			write_csv_row(skin, log);
 		}
 		pos += RECORD_SIZE;
 
