@@ -51,9 +51,10 @@ def parse_cmdline():
     ser.add_argument('--patches', '-p', type=int, default=1, help='number of sensor patches')
     ser.add_argument('--cells', '-c', type=int, default=16, help='number of cells per patch')
     #ser.add_argument('--baud', '-b', type=int, default=2000000, help='use baud rate')
-    ser.add_argument('--history', '-n', metavar='N', type=int, default=1024, help='store N of the last values read')
+    ser.add_argument('--history', '-n', metavar='N', type=int, default=2048, help='store N of the last values read')
     ser.add_argument('--alpha', '-a', type=float, default=1, help='set alpha (0..1] for exponential averaging fall off')
     ser.add_argument('--log', '-l', type=str, default=None, help='log data to CSV file')
+    ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration')
 
     plot = parser.add_argument_group('Plotting and visualization options')
     plot.add_argument('--style', choices=['line', 'bar', 'mesh'], default='line', help='select plotting style')
@@ -354,11 +355,12 @@ def main():
         sensor.log(cmdline.log)
     sensor.start()
 
-    sensor.calibrate_start()
-    print('Calibrating... DO NOT TOUCH!')
-    time.sleep(4)
-    sensor.calibrate_stop()
-    print('Calibration finished')
+    if not cmdline.nocalibrate:
+        sensor.calibrate_start()
+        print('Calibrating... DO NOT TOUCH!')
+        time.sleep(4)
+        sensor.calibrate_stop()
+        print('Calibration finished')
 
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
