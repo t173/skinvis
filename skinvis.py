@@ -53,7 +53,7 @@ def parse_cmdline():
     #ser.add_argument('--baud', '-b', type=int, default=2000000, help='use baud rate')
     ser.add_argument('--history', '-n', metavar='N', type=int, default=2048, help='store N of the last values read')
     ser.add_argument('--alpha', '-a', type=float, default=1, help='set alpha (0..1] for exponential averaging fall off')
-    ser.add_argument('--log', '-l', type=str, default=None, help='log data to CSV file')
+    ser.add_argument('--log', '-l', metavar='CSV', type=str, default=None, help='log data to CSV file')
     ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration')
 
     plot = parser.add_argument_group('Plotting and visualization options')
@@ -63,9 +63,10 @@ def parse_cmdline():
     plot.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=None, help='set figure size in inches')
     plot.add_argument('--dup', type=int, help='mimic multiple patches by duplicating first patch DUP times')
     plot.add_argument('--only', metavar='PATCH', type=int, default=None, help='plot only patch out of many')
-    plot.add_argument('--zmin', type=float, default=-75000, help='set minimum z-axis for 3D plots')
-    plot.add_argument('--zmax', type=float, default=75000, help='set maximum z-axis for 3D plots')
+    plot.add_argument('--zmin', type=float, help='set minimum z-axis for 3D plots')#, default=-75000)
+    plot.add_argument('--zmax', type=float, help='set maximum z-axis for 3D plots')#, default=75000)
     plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=None, help='set z-axis range to [-Z, +Z]')
+    plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
 
     cmdline = parser.parse_args()
     if cmdline.config == 'octocan':
@@ -151,7 +152,9 @@ def allline_init(sensor):
             axes[patch, cell] = ax
             #ax.axis('off')
             lines[patch, cell] = ax.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
-            ax.set_ylim(cmdline.zmin, cmdline.zmax)
+            # if cmdline.zmin is not None and cmdline.zmax is not None:
+            #     ax.set_ylim(cmdline.zmin, cmdline.zmax)
+            #ax.autoscale(enable=True, axis='y')
             ax.text(0.1, 0.9, str(patch) + ',' + str(cell), transform=ax.transAxes, fontsize=10)
             fig.add_subplot(ax)
             ax.set_xticks([])
@@ -181,28 +184,6 @@ def allline_init(sensor):
             ax.spines['left'].set_visible(True)
         if ax.is_last_col():
             ax.spines['right'].set_visible(True)
-    # # Only outer grid lines
-    # for ax in fig.get_axes():
-    #     ax.spines['top'].set_visible(ax.is_first_row())
-    #     ax.spines['bottom'].set_visible(ax.is_last_row())
-    #     ax.spines['left'].set_visible(ax.is_first_col())
-    #     ax.spines['right'].set_visible(ax.is_last_col())
-
-    # fig, axs = plt.subplots(nrows, ncols, sharex=False, sharey=True)
-    # fig.set_figwidth(cmdline.figsize[0])
-    # fig.set_figheight(cmdline.figsize[1])
-
-    # margin = 0.05
-    # plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0.01, hspace=0.01)
-    
-    # for patch in range(1, sensor.patches + 1):
-    #     for cell in range(sensor.cells):
-    #         axes[patch, cell] = plt.subplot(nrows, ncols, sensor.cells*(patch - 1) + cell_to_pos[cell] + 1)
-                
-    #         plt.axis('off')
-    #         lines[patch, cell] = plt.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
-    #         plt.ylim(cmdline.zmin, cmdline.zmax)
-    #         axes[patch, cell].text(0.1, 0.9, str(patch) + ',' + str(cell), transform=axes[patch, cell].transAxes, fontsize=10)
     stats = None
     return fig, (lines, axes, stats)
 
@@ -215,6 +196,8 @@ def allline_update(frame, sensor, args):
         for cell in range(sensor.cells):
             h = sensor.get_history(patch, cell)
             lines[patch, cell].set_ydata(h)
+            axes[patch, cell].set_ylim(h.min(), h.max())
+            #axes[patch, cell].autoscale(enable=True, axis='y')
     global total_frames
     total_frames += 1
 
