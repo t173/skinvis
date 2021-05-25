@@ -27,3 +27,6 @@ $(TARG): $(OBJS) | $(DEPS) Makefile
 
 %.o: %.c $(DEPS) Makefile
 	$(CC) $(CCFLAGS) -DEXECNAME=$(TARG) -c -o $@ $<
+
+fake: fake.c util.h
+	$(CC) $(CCFLAGS) -o $@ $< -lm -lrt -lpthread

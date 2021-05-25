@@ -13,6 +13,7 @@ import datetime
 import argparse
 import threading
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
@@ -38,6 +39,8 @@ LINESTYLE = {
     'linewidth': 0.5,
 }
 
+CIRCLE_RADIUS = 0.45
+
 shutdown = False
 total_frames = 0
 
@@ -57,7 +60,7 @@ def parse_cmdline():
     ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration')
 
     plot = parser.add_argument_group('Plotting and visualization options')
-    plot.add_argument('--style', choices=['line', 'bar', 'mesh'], default='line', help='select plotting style')
+    plot.add_argument('--style', choices=['line', 'circle'], default='line', help='select plotting style')
     plot.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
     plot.add_argument('--threshold', metavar='VALUE', type=int, default=None, help='emphasis activity based on threshold value')
     plot.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=None, help='set figure size in inches')
@@ -330,6 +333,38 @@ def stats_updater(sensor, view, sleep=2):
 
         print("reader: %.2f KB/s  %.0f cells/s  %.1f Hz   plotter: %.1f fps" % (bytes_rate/1024, records_rate, total_Hz, frame_rate))
 
+def circle_init(sensor):
+    fig = plt.figure(figsize=cmdline.figsize)
+    plt.xlim(-0.5, 3.5)
+    plt.ylim(-0.5, 3.5)
+    plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
+    ax = plt.gca()
+    ax.set_facecolor('k')
+    cell_rows, cell_cols = placement.shape
+    circles = {}
+    for cell_pos, (row, col) in enumerate(product(range(cell_rows), range(cell_cols))):
+        cell = pos_to_cell[cell_pos]
+        circles[cell] = plt.Circle((row, col), CIRCLE_RADIUS, color='w')
+        ax.add_patch(circles[cell])
+    norm = mpl.colors.Normalize(vmin=-2**20, vmax=2**20, clip=True)
+    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.bwr)
+    ax.set_aspect('equal')
+    plt.colorbar(mapper)
+    return fig, (circles, mapper)
+
+def circle_update(frame, sensor, args):
+    '''
+    Updates the plot for each frame
+    '''
+    circles, mapper = args
+    for cell in range(sensor.cells):
+        #h = sensor.get_history(patch, cell)
+        avg = sensor.get_expavg(1, cell)
+        clr = mapper.to_rgba(avg)
+        circles[cell].set_color(clr)
+    global total_frames
+    total_frames += 1
+
 def main():
     global shutdown
     sensor = skin.Skin(patches=cmdline.patches, cells=cmdline.cells, device=cmdline.device, history=cmdline.history)
@@ -363,6 +398,9 @@ def main():
         #anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay);
     elif cmdline.style == 'mesh':
         raise NotImplementedError()
+    elif cmdline.style == 'circle':
+        fig, args = circle_init(sensor)
+        anim = animation.FuncAnimation(fig, func=circle_update, fargs=(sensor, args), interval=cmdline.delay)
     plt.show()
 
     shutdown = True
