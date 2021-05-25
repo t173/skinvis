@@ -68,7 +68,7 @@ def parse_cmdline():
     plot.add_argument('--only', metavar='PATCH', type=int, default=None, help='plot only patch out of many')
     plot.add_argument('--zmin', type=float, help='set minimum z-axis for 3D plots')#, default=-75000)
     plot.add_argument('--zmax', type=float, help='set maximum z-axis for 3D plots')#, default=75000)
-    plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=None, help='set z-axis range to [-Z, +Z]')
+    plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=1e6, help='set z-axis range to [-Z, +Z]')
     plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
 
     cmdline = parser.parse_args()
@@ -81,6 +81,8 @@ def parse_cmdline():
     if cmdline.figsize is None:
         if cmdline.style == 'line':
             cmdline.figsize = (8, 8) if cmdline.only else (15, 9)
+        elif cmdline.style == 'circle':
+            cmdline.figsize = (8, 6)
         else:
             cmdline.figsize = (8, 8)
     if cmdline.zrange:
@@ -335,6 +337,7 @@ def stats_updater(sensor, view, sleep=2):
 
 def circle_init(sensor):
     fig = plt.figure(figsize=cmdline.figsize)
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
     plt.xlim(-0.5, 3.5)
     plt.ylim(-0.5, 3.5)
     plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
@@ -346,24 +349,30 @@ def circle_init(sensor):
         cell = pos_to_cell[cell_pos]
         circles[cell] = plt.Circle((row, col), CIRCLE_RADIUS, color='w')
         ax.add_patch(circles[cell])
-    norm = mpl.colors.Normalize(vmin=-2**20, vmax=2**20, clip=True)
-    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.bwr)
+    norm = mpl.colors.Normalize(vmin=cmdline.zmin, vmax=cmdline.zmax, clip=True)
+    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.seismic)
     ax.set_aspect('equal')
     plt.colorbar(mapper)
     return fig, (circles, mapper)
 
+allmin, allmax = np.inf, -np.inf
 def circle_update(frame, sensor, args):
     '''
     Updates the plot for each frame
     '''
+    global allmin, allmax
     circles, mapper = args
     for cell in range(sensor.cells):
-        #h = sensor.get_history(patch, cell)
+        h = sensor.get_history(1, cell)
+        allmin = min(allmin, h.min())
+        allmax = max(allmax, h.max())
         avg = sensor.get_expavg(1, cell)
         clr = mapper.to_rgba(avg)
         circles[cell].set_color(clr)
     global total_frames
     total_frames += 1
+    if total_frames % 50 == 0:
+        print(allmin, allmax)
 
 def main():
     global shutdown
