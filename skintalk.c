@@ -14,8 +14,9 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <sys/select.h>
 //#include <termios.h>
-//#include <sys/time.h>
+#include <sys/time.h>
 #include <time.h>
 //#include <arpa/inet.h>
 
@@ -45,7 +46,21 @@ typedef struct record {
 
 static void
 transmit_char(int fd, char code) {
-	if ( write(fd, &code, 1) < 0 ) {
+	fd_set set;
+	static struct timeval timeout = {
+		.tv_sec = 3,
+		.tv_usec = 0
+	};
+	int ret;
+	FD_ZERO(&set);
+	FD_SET(fd, &set);
+
+	ret = select(fd + 1, NULL, &set, NULL, &timeout);
+	if ( ret < 0 ) {
+		FATAL("select(2) error: %s", strerror(errno));
+	} else if ( ret == 0 ) {
+		WARNING("Timed out while writing to device");
+	} else if ( write(fd, &code, 1) < 0 ) {
 		WARNING("Cannot write to device");
 	}
 }
