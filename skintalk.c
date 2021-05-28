@@ -37,6 +37,13 @@
 // Magic number at start of each record
 #define RECORD_START 0x55
 
+// Record some event with a value to debugging log
+#define DEBUG_LOG(f, msg, ...) do { \
+  if ( f ) { \
+    struct timespec now; get_time(&now); \
+    fprintf(f, "%ld.%09ld," msg "\n", (long)now.tv_sec, (long)now.tv_nsec, ##__VA_ARGS__); \
+  } } while (0)
+
 // A single measurement of a sensor cell
 typedef struct record {
 	short patch;
@@ -67,7 +74,7 @@ transmit_char(int fd, char code) {
 
 static int
 is_record_start(uint8_t *p) {
-	return (p[0] == RECORD_START) && (p[RECORD_SIZE - 1] == RECORD_START);
+	return (p[0] == RECORD_START) && (p[RECORD_SIZE] == RECORD_START);
 }
 
 inline static int32_t
@@ -181,14 +188,24 @@ get_time(struct timespec *dst) {
 }
 
 void
-write_csv_row(skin_t *skin, FILE *f) {
+write_csv_row(skin_t *skin, FILE *f, FILE *debuglog) {
+	int pos;
 	struct timespec now;
 	get_time(&now);
 	fprintf(f, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
 			ring_t *ring = &RING_AT(skin, p, c);
-			fprintf(f, ",%d", (int)ring->buf[(ring->pos - 1) % ring->capacity]);
+			if ( ring->pos == 0 ) {
+			  pos = ring->capacity - 1;
+			} else {
+			  pos = ring->pos - 1;
+			}
+			long value = (long)ring->buf[pos];
+			if ( value == 0 ) {
+			  DEBUG_LOG(debuglog, "zero,%d", pos);
+			}
+			fprintf(f, ",%ld", value);
 		}
 	}
 	fprintf(f, "\n");
@@ -230,6 +247,7 @@ skin_reader(void *args) {
 		} else {
 			DEBUGMSG("Logging debugging information to %s", skin->debuglog);
 		}
+		fprintf(debuglog, "time,event,value\n");
 	}
 
 	transmit_char(fd, START_CODE);
@@ -239,9 +257,11 @@ skin_reader(void *args) {
 	for ( int pos=0; !skin->shutdown; ) {
 		if ( pos + RECORD_SIZE > BUFFER_SIZE ) {
 			// If out of space, roll back the tape and refill it
-			memmove(buffer, buffer + pos, BUFFER_SIZE - pos);
-			pos = BUFFER_SIZE - pos;
-			skin->total_bytes += read_bytes(fd, buffer + pos, BUFFER_SIZE - pos);
+			DEBUG_LOG(debuglog, "rollback,%d", pos);
+			int scrap = BUFFER_SIZE - pos;
+			memmove(buffer, buffer + pos, scrap);
+			skin->total_bytes += read_bytes(fd, buffer + scrap, BUFFER_SIZE - scrap);
+			pos = 0;
 		}
 
 		if ( !is_record_start(buffer + pos) ) {
@@ -250,11 +270,7 @@ skin_reader(void *args) {
 			continue;
 		}
 		if ( advanced > 0 ) {
-			if ( debuglog ) {
-				struct timespec now;
-				get_time(&now);
-				fprintf(debuglog, "%ld.%09ld,%d\n", (long)now.tv_sec, (long)now.tv_nsec, advanced);
-			}
+			DEBUG_LOG(debuglog, "advance,%d", advanced);
 			advanced = 0;
 		}
 
@@ -275,7 +291,9 @@ skin_reader(void *args) {
 
 			// Append to log
 			if ( log && !skin->calibrating && patch + 1 == skin->num_patches && record.cell + 1 == skin->num_cells ) {
-				write_csv_row(skin, log);
+				pthread_mutex_lock(&skin->lock);
+				write_csv_row(skin, log, debuglog);
+				pthread_mutex_unlock(&skin->lock);
 			}
 		}
 	}
