@@ -67,7 +67,7 @@ transmit_char(int fd, char code) {
 
 static int
 is_record_start(uint8_t *p) {
-	return (p[0] == RECORD_START) && (p[RECORD_SIZE] == RECORD_START);
+	return (p[0] == RECORD_START) && (p[RECORD_SIZE - 1] == RECORD_START);
 }
 
 inline static int32_t
@@ -142,6 +142,7 @@ skin_init(skin_t *skin, int patches, int cells, const char *device, int history)
 	skin->total_bytes = 0;
 	skin->total_records = 0;
 	skin->log = NULL;
+	skin->debuglog = NULL;
 	return skin_allocate(skin, patches, cells);
 }
 
@@ -170,17 +171,19 @@ write_csv_header(skin_t *skin, FILE *f) {
 	fprintf(f, "\n");
 }
 
+static void
+get_time(struct timespec *dst) {
+	static int warned = 0;
+	if ( clock_gettime(CLOCK_REALTIME, dst) < 0 && !warned ) {
+		WARNING("clock_gettime() failed: %s", strerror(errno));
+		warned = 1;
+	}
+}
+
 void
 write_csv_row(skin_t *skin, FILE *f) {
-	static int warned = 0;
 	struct timespec now;
-	if ( clock_gettime(CLOCK_REALTIME, &now) < 0 ) {
-		if ( !warned ) {
-			WARNING("clock_gettime() failed: %s", strerror(errno));
-			warned = 1;
-		}
-		return;
-	}
+	get_time(&now);
 	fprintf(f, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
@@ -220,9 +223,19 @@ skin_reader(void *args) {
 		}
 	}
 
+	FILE *debuglog = NULL;
+	if ( skin->debuglog ) {
+		if ( !(debuglog = fopen(skin->debuglog, "wt")) ) {
+			WARNING("Cannot open debugging log file %s\n%s", skin->debuglog, strerror(errno));
+		} else {
+			DEBUGMSG("Logging debugging information to %s", skin->debuglog);
+		}
+	}
+
 	transmit_char(fd, START_CODE);
 	skin->total_bytes += read_bytes(fd, buffer, BUFFER_SIZE);
 
+	int advanced = 0;
 	for ( int pos=0; !skin->shutdown; ) {
 		if ( pos + RECORD_SIZE > BUFFER_SIZE ) {
 			// If out of space, roll back the tape and refill it
@@ -230,10 +243,21 @@ skin_reader(void *args) {
 			pos = BUFFER_SIZE - pos;
 			skin->total_bytes += read_bytes(fd, buffer + pos, BUFFER_SIZE - pos);
 		}
+
 		if ( !is_record_start(buffer + pos) ) {
 			pos++;
+			advanced++;
 			continue;
 		}
+		if ( advanced > 0 ) {
+			if ( debuglog ) {
+				struct timespec now;
+				get_time(&now);
+				fprintf(debuglog, "%ld.%09ld,%d\n", (long)now.tv_sec, (long)now.tv_nsec, advanced);
+			}
+			advanced = 0;
+		}
+
 		get_record(&record, buffer + pos);
 		pos += RECORD_SIZE;
 
@@ -258,6 +282,9 @@ skin_reader(void *args) {
 	transmit_char(fd, STOP_CODE);
 	if ( log ) {
 		fclose(log);
+	}
+	if ( debuglog ) {
+		fclose(debuglog);
 	}
 	return skin;
 }
@@ -319,6 +346,13 @@ void
 skin_log_stream(skin_t *skin, const char *filename) {
 	if ( skin ) {
 		skin->log = filename;
+	}
+}
+
+void
+skin_debuglog_stream(skin_t *skin, const char *filename) {
+	if ( skin ) {
+		skin->debuglog = filename;
 	}
 }
 

@@ -16,6 +16,7 @@ typedef struct skin {
 	ring_t *rings;         // ring buffers storing sensor values 
 	int history;           // size of ring buffers
 	const char *log;       // log record stream to filename
+	const char *debuglog;  // log debugging data to filename
 
 	// Reader thread management
 	pthread_t reader;
@@ -37,6 +38,9 @@ void skin_stop(skin_t *skin);
 // Informs the skin_t to log the raw stream to a file.  Note that this
 // must be set before calling skin_start()
 void skin_log_stream(skin_t *skin, const char *filename);
+
+// Log debugging information to file
+void skin_debuglog_stream(skin_t *skin, const char *filename);
 
 void skin_get_history(skin_t *skin, ring_data_t *dst, int patch, int cell);
 double skin_get_expavg(skin_t *skin, int patch, int cell);
