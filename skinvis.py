@@ -64,7 +64,7 @@ def parse_cmdline():
     ser.add_argument('--cells', '-c', type=int, default=16, help='number of cells per patch')
     #ser.add_argument('--baud', '-b', type=int, default=2000000, help='use baud rate')
     ser.add_argument('--history', '-n', metavar='N', type=int, default=2048, help='store N of the last values read')
-    ser.add_argument('--alpha', '-a', type=float, default=1, help='set alpha (0..1] for exponential averaging fall off')
+    ser.add_argument('--alpha', '-a', type=float, default=0.1, help='set alpha (0..1] for exponential averaging fall off')
     ser.add_argument('--log', '-l', metavar='CSV', type=str, default=None, help='log data to CSV file')
     ser.add_argument('--debug', metavar='FILE', type=str, default=None, help='log debugging information to FILE')
     ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
