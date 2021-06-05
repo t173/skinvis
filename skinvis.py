@@ -19,9 +19,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
 from itertools import product, chain
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from matplotlib.widgets import Button
+#from mpl_toolkits.mplot3d import Axes3D
+#from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 import skin
 
@@ -379,47 +378,61 @@ def circle_init(sensor, patch):
     fig = plt.figure(figsize=cmdline.figsize)
     plt.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
     plt.xlim(-0.5, 3.5)
-    plt.ylim(-0.5, 3.5)
+    plt.ylim(-3.5, 0.5)
     plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
     ax = plt.gca()
-    ax.set_facecolor('k')
+    #ax.set_facecolor('k')
+    ax.set_facecolor('white')
     cell_rows, cell_cols = placement.shape
     circles = {}
+    pos = {}
     for cell_pos, (row, col) in enumerate(product(range(cell_rows), range(cell_cols))):
         cell = pos_to_cell[cell_pos]
-        circles[cell] = plt.Circle((row, col), CIRCLE_RADIUS, color='w')
+        pos[cell] = (col, -row)
+        circles[cell] = plt.Circle(pos[cell], CIRCLE_RADIUS, color='w', zorder=10)
         ax.add_patch(circles[cell])
+        if calib is None or not calib.loc[cell, 'inactive']:
+            plt.text(pos[cell][0], pos[cell][1], str(cell), color='#444444',
+                     fontsize=24, ha='center', va='center', zorder=20)
+
     if calib is not None:
-        vmin, vmax = -1, 1
+        vmin, vmax = -2, 2
     else:
         vmin, vmax = cmdline.zmin, cmdline.zmax
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
-    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.seismic)
+    cmap = mpl.colors.LinearSegmentedColormap.from_list("cardinal", [
+        [0.00, 'black'],
+        [0.01, '#AD0000'],
+        [0.45, 'white'],
+        [0.55, 'white'],
+        [0.99, '#AD0000'],
+        [1.00, 'black'],
+    ])
+    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
     ax.set_aspect('equal')
-    plt.colorbar(mapper)
-    return fig, (circles, mapper, patch)
+    for spine in ax.spines:
+        ax.spines[spine].set_visible(False)
+    if calib is None:
+        plt.colorbar(mapper)
+    return fig, (circles, mapper, patch, pos)
 
-allmin, allmax = np.inf, -np.inf
 def circle_update(frame, sensor, args):
     '''
     Updates the plot for each frame
     '''
-    global allmin, allmax
     global calib
-    circles, mapper, patch = args
+    circles, mapper, patch, pos = args
     for cell in range(sensor.cells):
-        h = sensor.get_history(patch, cell)
-        allmin = min(allmin, h.min())
-        allmax = max(allmax, h.max())
-        avg = sensor.get_expavg(1, cell)
+        avg = sensor.get_expavg(patch, cell)
         if calib is not None:
-            avg = avg/calib.loc[cell, 'delta']
+            if calib.loc[cell, 'inactive']:
+                continue
+            else:
+                avg /= calib.loc[cell, 'delta']
         clr = mapper.to_rgba(avg)
         circles[cell].set_color(clr)
     global total_frames
     total_frames += 1
-    if total_frames % 50 == 0:
-        print(allmin, allmax)
 
 def calibrate(sensor, keep=True, show=True):
     sensor.calibrate_start()
@@ -477,13 +490,13 @@ def main():
     #     #anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay);
     elif cmdline.style == 'circle':
         if sensor.patches > 1:
-            print("Warning: Multiple patches given, Using only first patch")
+            print("Warning: Multiple patches given, using only first patch")
         fig, args = circle_init(sensor, 1)
         anim = animation.FuncAnimation(fig, func=circle_update, fargs=(sensor, args), interval=cmdline.delay)
 
     plt.figure(figsize=(1,1))
     ax = plt.axes()
-    button = Button(ax, 'Baseline')
+    button = mpl.widgets.Button(ax, 'Baseline')
     button.on_clicked(lambda b: calibrate(sensor))
 
     plt.show()

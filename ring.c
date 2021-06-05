@@ -73,7 +73,7 @@ ring_calibrate_stop(ring_t *ring) {
 		ring->calibration = ring->calib_batch/ring->calib_count;
 	}
 	memset(ring->buf, 0, ring->capacity*sizeof(*ring->buf));
-	ring->expavg = ring->calibration;
+	ring->expavg = 0;
 	ring->pos = 0;
 }
 
