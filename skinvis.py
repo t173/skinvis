@@ -13,6 +13,7 @@ import datetime
 import argparse
 import threading
 import numpy as np
+import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -20,15 +21,24 @@ import matplotlib.animation as animation
 from itertools import product, chain
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.widgets import Button
 
 import skin
 
 # Physical arrangement of tactile sensors on the film by number
+# placement = np.array([
+#     [2, 1,  9, 10],
+#     [4, 3, 11, 12],
+#     [6, 5, 13, 14],
+#     [8, 7, 15, 16],
+# ]) - 1
+
+# Swap columns for demo
 placement = np.array([
-    [2, 1,  9, 10],
-    [4, 3, 11, 12],
-    [6, 5, 13, 14],
-    [8, 7, 15, 16],
+    [1, 2,  10, 9],
+    [3, 4, 12, 11],
+    [5, 6, 14, 13],
+    [7, 8, 16, 15],
 ]) - 1
 
 pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
@@ -58,7 +68,7 @@ def parse_cmdline():
     ser.add_argument('--alpha', '-a', type=float, default=1, help='set alpha (0..1] for exponential averaging fall off')
     ser.add_argument('--log', '-l', metavar='CSV', type=str, default=None, help='log data to CSV file')
     ser.add_argument('--debug', metavar='FILE', type=str, default=None, help='log debugging information to FILE')
-    ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration')
+    ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
 
     plot = parser.add_argument_group('Plotting and visualization options')
     plot.add_argument('--style', choices=['line', 'circle'], default='line', help='select plotting style')
@@ -71,6 +81,7 @@ def parse_cmdline():
     plot.add_argument('--zmax', type=float, help='set maximum z-axis for 3D plots')#, default=75000)
     plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=1e6, help='set z-axis range to [-Z, +Z]')
     plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
+    plot.add_argument('--calib', metavar='CSVFILE', help='calibration data from CSVFILE')
 
     cmdline = parser.parse_args()
     if cmdline.config == 'octocan':
@@ -91,48 +102,49 @@ def parse_cmdline():
         cmdline.zmax = abs(cmdline.zrange)
     return cmdline
 
-def line_init(sensor, patch):
-    '''
-    Plots initial layout artists
-    '''
-    nrows, ncols = placement.shape
-    fig, axs = plt.subplots(nrows, ncols, sharex=False, sharey=True)
-    fig.set_figwidth(cmdline.figsize[0])
-    fig.set_figheight(cmdline.figsize[1])
+# def line_init(sensor, patch):
+#     '''
+#     Plots initial layout artists
+#     '''
+#     nrows, ncols = placement.shape
+#     fig, axs = plt.subplots(nrows, ncols, sharex=False, sharey=True)
+#     fig.set_figwidth(cmdline.figsize[0])
+#     fig.set_figheight(cmdline.figsize[1])
 
-    margin = 0.05
-    plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0.01, hspace=0.01)
-    lines = [None]*sensor.cells
-    axes = [None]*sensor.cells
-    pos = 1
-    for row in placement:
-        for index in row:
-            axes[index] = plt.subplot(nrows, ncols, pos)
-            plt.axis('off')
-            lines[index] = plt.plot(sensor.get_history(patch, index), **LINESTYLE)[0]
-            plt.ylim(cmdline.zmin, cmdline.zmax)
-            pos += 1
-            axes[index].text(0.1, 0.9, str(index), transform=axes[index].transAxes, fontsize=12)
-    stats = None
-    return fig, (lines, axes, stats)
+#     margin = 0.05
+#     plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0.01, hspace=0.01)
+#     lines = [None]*sensor.cells
+#     axes = [None]*sensor.cells
+#     pos = 1
+#     for row in placement:
+#         for index in row:
+#             axes[index] = plt.subplot(nrows, ncols, pos)
+#             plt.axis('off')
+#             lines[index] = plt.plot(sensor.get_history(patch, index), **LINESTYLE)[0]
+#             plt.ylim(cmdline.zmin, cmdline.zmax)
+#             pos += 1
+#             axes[index].text(0.1, 0.9, str(index), transform=axes[index].transAxes, fontsize=12)
+#     stats = None
+#     return fig, (lines, axes, stats)
 
-def line_update(frame, sensor, patch, args):
-    '''
-    Updates the plot for each frame
-    '''
-    lines, axes, stats = args
-    ymin, ymax = plt.ylim()
-    for index, line in enumerate(lines):
-        h = sensor.get_history(patch, index)
-        line.set_ydata(h)
-        plt.autoscale(axis='y')
-    global total_frames
-    total_frames += 1
+# def line_update(frame, sensor, patch, args):
+#     '''
+#     Updates the plot for each frame
+#     '''
+#     lines, axes, stats = args
+#     ymin, ymax = plt.ylim()
+#     for index, line in enumerate(lines):
+#         h = sensor.get_history(patch, index)
+#         line.set_ydata(h)
+#         plt.autoscale(axis='y')
+#     global total_frames
+#     total_frames += 1
 
 def allline_init(sensor):
     '''
     Plots initial layout artists
     '''
+    global calib
     margin = 0.05
     adjust = { 'wspace': 0.01, 'hspace': 0.01 }
     patch_rows = 2 if sensor.patches > 4 else 1
@@ -154,17 +166,34 @@ def allline_init(sensor):
         # ax.set_title(str(patch))
         for cell_pos, (cell_row, cell_col) in enumerate(product(range(cell_rows), range(cell_cols))):
             cell = pos_to_cell[cell_pos]
+            #print('cell', cell, 'in pos', cell_pos)
+
             ax = fig.add_subplot(cell_grid[cell_pos])
+            ax.set_xticks([])
+            
+            text = str(patch) + ',' + str(cell)
+            h = sensor.get_history(patch, cell)
+            disabled = False
+            if calib is not None:
+                # Have calibration
+                if calib.loc[cell, 'inactive']:
+                    disabled = True
+                    text += ' disabled'
+                    ax.text(0.1, 0.9, text, transform=ax.transAxes, fontsize=10)
+                    ax.set_yticks([])
+                    continue
+                else:
+                    delta = calib.loc[pos_to_cell[cell_pos], 'delta'].astype(float)
+                    h = h.astype(float)/delta
+                    ax.set_ylim(-2, 2)
+
+            ax.text(0.1, 0.9, text, transform=ax.transAxes, fontsize=10)
             axes[patch, cell] = ax
-            #ax.axis('off')
-            lines[patch, cell] = ax.plot(sensor.get_history(patch, cell), **LINESTYLE)[0]
+            lines[patch, cell] = ax.plot(h, **LINESTYLE)[0]
             # if cmdline.zmin is not None and cmdline.zmax is not None:
             #     ax.set_ylim(cmdline.zmin, cmdline.zmax)
             #ax.autoscale(enable=True, axis='y')
-            ax.text(0.1, 0.9, str(patch) + ',' + str(cell), transform=ax.transAxes, fontsize=10)
             fig.add_subplot(ax)
-            ax.set_xticks([])
-            ax.set_yticks([])
 
             # #matplotlib v3.3.3 version?
             # cell_grid = patch_grid[patch_row, patch_col].subgridspec(cell_rows, cell_cols, wspace=0.01, hspace=0.01)
@@ -201,113 +230,122 @@ def allline_update(frame, sensor, args):
     for patch in range(1, sensor.patches + 1):
         for cell in range(sensor.cells):
             h = sensor.get_history(patch, cell)
+            if calib is not None:
+                # Have calibration
+                if calib.loc[cell, 'inactive']:
+                    continue
+                h = h.astype(float)/calib.loc[cell, 'delta'].astype(float)
+            else:
+                # Not using calibration, autoscale
+                hmin, hmax = h.min(), h.max()
+                if hmin == hmax:
+                    hmin, hmax = -10, 10
+                axes[patch, cell].set_ylim(hmin, hmax)
             lines[patch, cell].set_ydata(h)
-            axes[patch, cell].set_ylim(h.min(), h.max())
-            #axes[patch, cell].autoscale(enable=True, axis='y')
     global total_frames
     total_frames += 1
 
-standard_axes = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+# standard_axes = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 
-def patch_rotate(patch, v):
-    angle = -(patch - 1)*np.pi/4
-    patch_axes = np.array([
-        [np.cos(angle), np.sin(angle), 0],
-        [-np.sin(angle), np.cos(angle), 0],
-        [0, 0, 1]])
-    rotation = np.inner(patch_axes, standard_axes)
-    return np.inner(v, rotation)
+# def patch_rotate(patch, v):
+#     angle = -(patch - 1)*np.pi/4
+#     patch_axes = np.array([
+#         [np.cos(angle), np.sin(angle), 0],
+#         [-np.sin(angle), np.cos(angle), 0],
+#         [0, 0, 1]])
+#     rotation = np.inner(patch_axes, standard_axes)
+#     return np.inner(v, rotation)
 
-bars = None
-bars_base = None
-bars_out = None
-bars_wide = None
-bars_tall = None
+# bars = None
+# bars_base = None
+# bars_out = None
+# bars_wide = None
+# bars_tall = None
 
-def make_bars(sensor):
-    bars = []
-    for p in range(sensor.patches):
-        c1 = bars_base[p].T
-        reading = [sensor.get_expavg(p+1, c) for c in range(sensor.cells)]
-        c1 += np.array([(reading[i]/cmdline.zmax)*bars_out[0].T[i] for i in range(len(reading))])
-        #/cmdline.zmax)*(bars_out[p].T)
-        #c1b = np.add(c1, reading)
-        c2 = c1 + bars_wide[p].T
-        c3 = c1 + bars_wide[p].T + bars_tall[p].T
-        c4 = c1 + bars_tall[p].T
-        corners = np.transpose(np.array([c1, c2, c3, c4]), axes=[1, 0, 2])
-        poly = Poly3DCollection(corners)
-        poly.set_facecolor('#888888')
-        bars.append(poly)
-        #ax.add_collection(poly)
-    return bars
+# def make_bars(sensor):
+#     bars = []
+#     for p in range(sensor.patches):
+#         c1 = bars_base[p].T
+#         reading = [sensor.get_expavg(p+1, c) for c in range(sensor.cells)]
+#         c1 += np.array([(reading[i]/cmdline.zmax)*bars_out[0].T[i] for i in range(len(reading))])
+#         #/cmdline.zmax)*(bars_out[p].T)
+#         #c1b = np.add(c1, reading)
+#         c2 = c1 + bars_wide[p].T
+#         c3 = c1 + bars_wide[p].T + bars_tall[p].T
+#         c4 = c1 + bars_tall[p].T
+#         corners = np.transpose(np.array([c1, c2, c3, c4]), axes=[1, 0, 2])
+#         poly = Poly3DCollection(corners)
+#         poly.set_facecolor('#888888')
+#         bars.append(poly)
+#         #ax.add_collection(poly)
+#     return bars
 
-def bar_init(sensor):
-    global bars, bars_base, bars_out, bars_wide, bars_tall
-    fig = plt.figure(figsize=cmdline.figsize)
-    ax = fig.add_subplot(111, projection='3d')
-    width = depth = 1
-    # xx, yy = np.meshgrid(*(np.arange(d) for d in placement.shape))
-    # barx = xx.ravel()
-    # bary = yy.ravel()
+# def bar_init(sensor):
+#     global bars, bars_base, bars_out, bars_wide, bars_tall
+#     fig = plt.figure(figsize=cmdline.figsize)
+#     ax = fig.add_subplot(111, projection='3d')
+#     width = depth = 1
+#     # xx, yy = np.meshgrid(*(np.arange(d) for d in placement.shape))
+#     # barx = xx.ravel()
+#     # bary = yy.ravel()
 
-    distance = 6  #distance from center
-    yy, nzz = np.meshgrid(*(np.arange(d) for d in placement.shape))
-    y = yy.ravel()
-    z = -nzz.ravel()
-    base = np.array([np.full_like(y, distance), y, z]).T - np.array([0, 2, 0])
+#     distance = 6  #distance from center
+#     yy, nzz = np.meshgrid(*(np.arange(d) for d in placement.shape))
+#     y = yy.ravel()
+#     z = -nzz.ravel()
+#     base = np.array([np.full_like(y, distance), y, z]).T - np.array([0, 2, 0])
 
-    out = np.array([[1, 0, 0]]*sensor.cells)
-    wide = np.array([[0, 1, 0]]*sensor.cells)
-    tall = np.array([[0, 0, 1]]*sensor.cells)
+#     out = np.array([[1, 0, 0]]*sensor.cells)
+#     wide = np.array([[0, 1, 0]]*sensor.cells)
+#     tall = np.array([[0, 0, 1]]*sensor.cells)
 
-    bars_base = np.array([patch_rotate(p, base).T for p in range(1, sensor.patches + 1)])
-    bars_out = np.array([patch_rotate(p, out).T for p in range(1, sensor.patches + 1)])
-    bars_wide = np.array([patch_rotate(p, wide).T for p in range(1, sensor.patches + 1)])
-    bars_tall = np.array([patch_rotate(p, tall).T for p in range(1, sensor.patches + 1)])
+#     bars_base = np.array([patch_rotate(p, base).T for p in range(1, sensor.patches + 1)])
+#     bars_out = np.array([patch_rotate(p, out).T for p in range(1, sensor.patches + 1)])
+#     bars_wide = np.array([patch_rotate(p, wide).T for p in range(1, sensor.patches + 1)])
+#     bars_tall = np.array([patch_rotate(p, tall).T for p in range(1, sensor.patches + 1)])
 
-    bars = make_bars(sensor)
-    for bar in bars:
-        ax.add_collection(bar)
+#     bars = make_bars(sensor)
+#     for bar in bars:
+#         ax.add_collection(bar)
 
-    # zero = np.zeros_like(barx)
-    # place = placement.ravel()
+#     # zero = np.zeros_like(barx)
+#     # place = placement.ravel()
 
-    # bars = []
-    # for p in [0]:#range(sensor.patches):
-    #     #bar = ax.bar3d(barx, bary, zero, width, depth, zero, color='#888888', shade=True)
-    #     breakpoint()
-    #     bar = ax.bar3d(x=bars_base[p][0], y=bars_base[p][1], z=bars_base[p][2],
-    #                    dx=bars_out[p][0], dy=bars_out[p][1], dz=bars_out[p][2],
-    #                    color='#888888', shade=True)
-    #     bars.append(bar)
-    #return fig, (ax, barx, bary, place)
-    ax.set_xlim3d(-10, 10)
-    ax.set_ylim3d(-10, 10)
-    ax.set_zlim3d(-10, 10)
-    #ax.set_zlim3d(cmdline.zmin, cmdline.zmax)
-    plt.show()
-    return fig, ax
+#     # bars = []
+#     # for p in [0]:#range(sensor.patches):
+#     #     #bar = ax.bar3d(barx, bary, zero, width, depth, zero, color='#888888', shade=True)
+#     #     breakpoint()
+#     #     bar = ax.bar3d(x=bars_base[p][0], y=bars_base[p][1], z=bars_base[p][2],
+#     #                    dx=bars_out[p][0], dy=bars_out[p][1], dz=bars_out[p][2],
+#     #                    color='#888888', shade=True)
+#     #     bars.append(bar)
+#     #return fig, (ax, barx, bary, place)
+#     ax.set_xlim3d(-10, 10)
+#     ax.set_ylim3d(-10, 10)
+#     ax.set_zlim3d(-10, 10)
+#     #ax.set_zlim3d(cmdline.zmin, cmdline.zmax)
+#     plt.show()
+#     return fig, ax
 
-def bar_update(frame, sensor, args):
-    global bars
-    # width = depth = 1
-    # ax, barx, bary, place = args
-    # zero = np.zeros_like(barx)
-    # current = [sensor.get_expavg(patch, cell) for cell in place]
-    # ax.clear()
-    # bars[0].remove()
-    # bars[0] = ax.bar3d(x=barx, y=bary, z=zero, dx=width, dy=depth, dz=current, color='#888888', shade=True)
-    # ax.set_zlim3d(cmdline.zmin, cmdline.zmax)
-    ax = args
-    ax.clear()
-    # for bar in bars:
-    #     bar.remove()
-    bars = make_bars(sensor)
-    for bar in bars:
-        ax.add_collection(bar)
-    global total_frames
-    total_frames += 1
+# def bar_update(frame, sensor, args):
+#     global bars
+#     # width = depth = 1
+#     # ax, barx, bary, place = args
+#     # zero = np.zeros_like(barx)
+#     # current = [sensor.get_expavg(patch, cell) for cell in place]
+#     # ax.clear()
+#     # bars[0].remove()
+#     # bars[0] = ax.bar3d(x=barx, y=bary, z=zero, dx=width, dy=depth, dz=current, color='#888888', shade=True)
+#     # ax.set_zlim3d(cmdline.zmin, cmdline.zmax)
+#     ax = args
+#     ax.clear()
+#     # for bar in bars:
+#     #     bar.remove()
+#     bars = make_bars(sensor)
+#     for bar in bars:
+#         ax.add_collection(bar)
+#     global total_frames
+#     total_frames += 1
 
 def stats_updater(sensor, view, sleep=2):
     global shutdown, total_frames
@@ -336,7 +374,8 @@ def stats_updater(sensor, view, sleep=2):
 
         print("reader: %.2f KB/s  %.0f cells/s  %.1f Hz   plotter: %.1f fps" % (bytes_rate/1024, records_rate, total_Hz, frame_rate))
 
-def circle_init(sensor):
+def circle_init(sensor, patch):
+    global calib
     fig = plt.figure(figsize=cmdline.figsize)
     plt.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
     plt.xlim(-0.5, 3.5)
@@ -350,11 +389,15 @@ def circle_init(sensor):
         cell = pos_to_cell[cell_pos]
         circles[cell] = plt.Circle((row, col), CIRCLE_RADIUS, color='w')
         ax.add_patch(circles[cell])
-    norm = mpl.colors.Normalize(vmin=cmdline.zmin, vmax=cmdline.zmax, clip=True)
+    if calib is not None:
+        vmin, vmax = -1, 1
+    else:
+        vmin, vmax = cmdline.zmin, cmdline.zmax
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
     mapper = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.seismic)
     ax.set_aspect('equal')
     plt.colorbar(mapper)
-    return fig, (circles, mapper)
+    return fig, (circles, mapper, patch)
 
 allmin, allmax = np.inf, -np.inf
 def circle_update(frame, sensor, args):
@@ -362,12 +405,15 @@ def circle_update(frame, sensor, args):
     Updates the plot for each frame
     '''
     global allmin, allmax
-    circles, mapper = args
+    global calib
+    circles, mapper, patch = args
     for cell in range(sensor.cells):
-        h = sensor.get_history(1, cell)
+        h = sensor.get_history(patch, cell)
         allmin = min(allmin, h.min())
         allmax = max(allmax, h.max())
         avg = sensor.get_expavg(1, cell)
+        if calib is not None:
+            avg = avg/calib.loc[cell, 'delta']
         clr = mapper.to_rgba(avg)
         circles[cell].set_color(clr)
     global total_frames
@@ -375,8 +421,27 @@ def circle_update(frame, sensor, args):
     if total_frames % 50 == 0:
         print(allmin, allmax)
 
+def calibrate(sensor, keep=True, show=True):
+    sensor.calibrate_start()
+    print('Baseline calibration... DO NOT TOUCH!')
+    time.sleep(4)
+    sensor.calibrate_stop()
+    print('Baseline calibration finished')
+    baseline = None
+    if keep:
+        rows = []
+        for patch in range(1, sensor.patches + 1):
+            for cell in range(sensor.cells):
+                rows.append([patch, cell, sensor.get_calib(patch, cell)])
+        baseline = pd.DataFrame(rows, columns=['patch', 'cell', 'calibration'])
+        if show:
+            print(baseline)
+    return baseline
+            
 def main():
     global shutdown
+    global calib
+    calib = None
     sensor = skin.Skin(patches=cmdline.patches, cells=cmdline.cells, device=cmdline.device, history=cmdline.history)
     sensor.set_alpha(cmdline.alpha)
     if cmdline.log:
@@ -386,33 +451,41 @@ def main():
     sensor.start()
 
     if not cmdline.nocalibrate:
-        sensor.calibrate_start()
-        print('Calibrating... DO NOT TOUCH!')
-        time.sleep(4)
-        sensor.calibrate_stop()
-        print('Calibration finished')
+        calibrate(sensor)
+
+    if cmdline.calib:
+        print("Reading calibration data from", cmdline.calib)
+        calib = pd.read_csv(cmdline.calib, index_col='cell', comment='#')
+        calib['delta'] = abs(calib['max']) - abs(calib['baseline'])
+        calib['inactive'] = (calib['delta'] == 0)
 
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
     if cmdline.style == 'line':
-        if cmdline.only:
-            patch = cmdline.only
-            fig, args = line_init(sensor, patch)
-            anim = animation.FuncAnimation(fig, func=line_update, fargs=(sensor, patch, args), interval=cmdline.delay)
-        else:
-            fig, args = allline_init(sensor)
-            anim = animation.FuncAnimation(fig, func=allline_update, fargs=(sensor, args), interval=cmdline.delay)
-    elif cmdline.style == 'bar':
-        #fig, args = bar_init(sensor, patch)
-        fig, args = bar_init(sensor)
-        bar_update(0, sensor, args)
-        #anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay);
-    elif cmdline.style == 'mesh':
-        raise NotImplementedError()
+        # if cmdline.only:
+        #     patch = cmdline.only
+        #     fig, args = line_init(sensor, patch)
+        #     anim = animation.FuncAnimation(fig, func=line_update, fargs=(sensor, patch, args), interval=cmdline.delay)
+        # else:
+        fig, args = allline_init(sensor)
+        anim = animation.FuncAnimation(fig, func=allline_update, fargs=(sensor, args), interval=cmdline.delay)
+    # elif cmdline.style == 'bar':
+    #     #fig, args = bar_init(sensor, patch)
+    #     fig, args = bar_init(sensor)
+    #     bar_update(0, sensor, args)
+    #     #anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay);
     elif cmdline.style == 'circle':
-        fig, args = circle_init(sensor)
+        if sensor.patches > 1:
+            print("Warning: Multiple patches given, Using only first patch")
+        fig, args = circle_init(sensor, 1)
         anim = animation.FuncAnimation(fig, func=circle_update, fargs=(sensor, args), interval=cmdline.delay)
+
+    plt.figure(figsize=(1,1))
+    ax = plt.axes()
+    button = Button(ax, 'Baseline')
+    button.on_clicked(lambda b: calibrate(sensor))
+
     plt.show()
 
     shutdown = True

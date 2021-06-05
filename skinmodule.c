@@ -194,6 +194,25 @@ Skin_calibrate_stop(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 }
 
 static PyObject *
+Skin_get_calibration(SkinObject *self, PyObject *args) {
+	int patch, cell;
+	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) {
+		return NULL;
+	}
+	// Patch numbers start at 1
+	if ( patch <= 0 || patch > self->skin.num_patches ) {
+		PyErr_SetString(PyExc_ValueError, "patch number out of range");
+		return NULL;
+	}
+	// Cell numbers start at 0
+	if ( cell < 0 || cell >= self->skin.num_cells ) {
+		PyErr_SetString(PyExc_ValueError, "cell number out of range");
+		return NULL;
+	}
+	return PyLong_FromLong((long)skin_get_calibration(&self->skin, patch, cell));
+}
+
+static PyObject *
 Skin_log(SkinObject *self, PyObject *args) {
 	DEBUGMSG("Skin_log()");
 	char *filename;
@@ -228,6 +247,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "set_alpha", (PyCFunction)Skin_set_alpha, METH_VARARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Sets alpha for exponential averaging" },
+	{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ NULL }

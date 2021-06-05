@@ -58,27 +58,23 @@ ring_set_alpha(ring_t *ring, double alpha) {
 
 void
 ring_calibrate_start(ring_t *ring) {
+	ring->calibrating = 1;
 	ring->calibration = 0;
 	ring->calib_batch = 0;
 	ring->calib_count = 0;
-	ring->calibrating = 1;
 }
 
 void
 ring_calibrate_stop(ring_t *ring) {
-	ring->calibration = ring->calib_batch/(ring->calib_count + 1);
 	ring->calibrating = 0;
-	for ( int i=0; i<ring->capacity; ++i ) {
-		ring->buf[i] = ring->calibration;
+	if ( ring->calib_count == 0 ) {
+		ring->calibration = 0;
+	} else {
+		ring->calibration = ring->calib_batch/ring->calib_count;
 	}
-	ring->expavg = 0;
+	memset(ring->buf, 0, ring->capacity*sizeof(*ring->buf));
+	ring->expavg = ring->calibration;
 	ring->pos = 0;
-}
-
-void
-ring_calibrate_disable(ring_t *ring) {
-	ring->calibration = 0;
-	ring->calibrating = 0;
 }
 
 //EOF

@@ -169,10 +169,12 @@ skin_free(skin_t *skin) {
 
 void
 write_csv_header(skin_t *skin, FILE *f) {
+	// Note: internal patch numbers start at 0, external (device/user)
+	// start at 1, so here we write 1-based patch numbers
 	fprintf(f, "time");
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
-			fprintf(f, ",patch%d_cell%d", p, c);
+			fprintf(f, ",patch%d_cell%d", p + 1, c);
 		}
 	}
 	fprintf(f, "\n");
@@ -337,6 +339,7 @@ skin_stop(skin_t *skin) {
 
 void
 skin_get_history(skin_t *skin, ring_data_t *dst, int patch, int cell) {
+	// Note: patch number from user starts at 1
 	pthread_mutex_lock(&skin->lock);
 	ring_get_history(&RING_AT(skin, patch - 1, cell), dst);
 	pthread_mutex_unlock(&skin->lock);
@@ -353,6 +356,7 @@ skin_set_alpha(skin_t *skin, double alpha) {
 
 double
 skin_get_expavg(skin_t *skin, int patch, int cell) {
+	// Note: patch number from user starts at 1
 	double avg;
 	pthread_mutex_lock(&skin->lock);
 	avg = RING_AT(skin, patch - 1, cell).expavg;
@@ -394,6 +398,16 @@ skin_calibrate_stop(skin_t *skin) {
 			ring_calibrate_stop(&RING_AT(skin, p, c));
 	skin->calibrating = 0;
 	pthread_mutex_unlock(&skin->lock);
+}
+
+ring_data_t
+skin_get_calibration(skin_t *skin, int patch, int cell) {
+	// Note: patch number from user starts at 1
+	ring_data_t ret;
+	pthread_mutex_lock(&skin->lock);
+	ret = RING_AT(skin, patch - 1, cell).calibration;
+	pthread_mutex_unlock(&skin->lock);
+	return ret;
 }
 
 //EOF

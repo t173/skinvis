@@ -31,9 +31,6 @@ void ring_get_history(ring_t *ring, ring_data_t *dst);
 void ring_calibrate_start(ring_t *ring);
 void ring_calibrate_stop(ring_t *ring);
 
-// Disable calibration
-void ring_calibrate_disable(ring_t *ring);
-
 // Sets alpha value for exponential averaging, in the range (0..1].
 // Alpha determines the "fall off" of averaging; for alpha=1, only the
 // most current value is relevant, and for alpha=0, there would be no

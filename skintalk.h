@@ -49,4 +49,6 @@ int skin_set_alpha(skin_t *skin, double alpha);
 void skin_calibrate_start(skin_t *skin);
 void skin_calibrate_stop(skin_t *skin);
 
+ring_data_t skin_get_calibration(skin_t *skin, int patch, int cell);
+
 #endif // SKINTALK_H_
