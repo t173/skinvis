@@ -24,20 +24,12 @@ from itertools import product, chain
 
 import skin
 
-# Physical arrangement of tactile sensors on the film by number
-# placement = np.array([
-#     [2, 1,  9, 10],
-#     [4, 3, 11, 12],
-#     [6, 5, 13, 14],
-#     [8, 7, 15, 16],
-# ]) - 1
-
-# Swap columns for demo
+Physical arrangement of tactile sensors on the film by number
 placement = np.array([
-    [1, 2,  10, 9],
-    [3, 4, 12, 11],
-    [5, 6, 14, 13],
-    [7, 8, 16, 15],
+    [2, 1,  9, 10],
+    [4, 3, 11, 12],
+    [6, 5, 13, 14],
+    [8, 7, 15, 16],
 ]) - 1
 
 pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
