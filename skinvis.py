@@ -24,7 +24,7 @@ from itertools import product, chain
 
 import skin
 
-Physical arrangement of tactile sensors on the film by number
+# Physical arrangement of tactile sensors on the film by number
 placement = np.array([
     [2, 1,  9, 10],
     [4, 3, 11, 12],
