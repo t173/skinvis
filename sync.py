@@ -10,9 +10,11 @@ from matplotlib.animation import FuncAnimation
 
 force_label = "Indentation force (N)"
 
-other_style = { 'ls': '-', 'lw': 0.5, 'c': '0.7', 'label': 'other' }
-down_style = { 'ls': '-', 'lw': 3, 'c': 'tab:blue', 'label': 'press' }
-up_style = { 'ls': '-', 'lw': 3, 'c': 'cadetblue', 'label': 'release' }
+press_style = { 'lw': 2, 'c': 'tab:blue', 'label': 'press' }
+hold_style = { 'lw': 3, 'c': 'tab:red', 'label': 'hold' }
+release_style = { 'lw': 2, 'c': 'cadetblue', 'label': 'release' }
+adjacent_style = { 'lw': 1, 'c': '0.2' }
+other_style = { 'lw': 0.5, 'c': '0.7', 'label': 'other' }
 
 def parse_cmdline():
     parser = argparse.ArgumentParser()
@@ -91,41 +93,41 @@ def smooth(df, size=1000):
     return df.rolling(window=size, center=True).mean().dropna()
 
 
-def search(cmp_fn, low, high, iterations=20, args=[]):
-    global path
-    path = []
-    for i in range(iterations):
-        x = (low + high)/2
-        comparison = cmp_fn(x, *args)
-        path.append((x, low, high, comparison))
-        if comparison == 0:
-            break
-        elif comparison < 0: # too low
-            low = x
-        else:  # too high
-            high = x
-    return x
+# def search(cmp_fn, low, high, iterations=20, args=[]):
+#     global path
+#     path = []
+#     for i in range(iterations):
+#         x = (low + high)/2
+#         comparison = cmp_fn(x, *args)
+#         path.append((x, low, high, comparison))
+#         if comparison == 0:
+#             break
+#         elif comparison < 0: # too low
+#             low = x
+#         else:  # too high
+#             high = x
+#     return x
 
-def plot_path(df):
-    p = pd.DataFrame(path, columns=['x', 'low', 'high', 'cmp'])
-    p.index = p.index*len(df)/len(p)
-    plt.plot(np.arange(len(df)), df.force, '-', lw=1, c='b')
-    plt.plot(p.low, '-', lw=1, c='k')
-    plt.plot(p.high, '-', lw=1, c='k')
-    plt.plot(p.x, '-', lw=2, c='r')
-    ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.xaxis.set_visible(False)
+# def plot_path(df):
+#     p = pd.DataFrame(path, columns=['x', 'low', 'high', 'cmp'])
+#     p.index = p.index*len(df)/len(p)
+#     plt.plot(np.arange(len(df)), df.force, '-', lw=1, c='b')
+#     plt.plot(p.low, '-', lw=1, c='k')
+#     plt.plot(p.high, '-', lw=1, c='k')
+#     plt.plot(p.x, '-', lw=2, c='r')
+#     ax = plt.gca()
+#     ax.spines['top'].set_visible(False)
+#     ax.spines['bottom'].set_visible(False)
+#     ax.spines['right'].set_visible(False)
+#     ax.xaxis.set_visible(False)
 
 def most_freq(X, smooth='sqrt', hist=False):
     """
+    if hist==True, then also return bin counts and edges
     """
-    #X_smooth = pd.Series(X).rolling(smooth).mean().dropna().values if smooth else X
     count, edges = np.histogram(X, bins='sqrt', density=True)
     if smooth == 'sqrt':
-        smooth = 2*int(0.02*np.sqrt(len(X)))
+        smooth = 2*int(0.025*np.sqrt(len(X)))
     if smooth:
         count = pd.Series(count).rolling(smooth, center=True).mean().values
     c = np.nanargmax(count)
@@ -173,12 +175,12 @@ def detect_presses(df, threshold=None, expected=16):
         status("Warning: Expected", expected, "presses, but found", presses.nunique(), "(check threshold value)")
     return presses
 
-def get_press_times(df):
-    """
-    Gets press start and stop from previously detected presses in df
-    """
-    press_data = [ [int(p), group.index.min(), group.index.max()] for p, group in df.groupby('press') ]
-    return pd.DataFrame(press_data, columns=['press', 'start', 'stop']).set_index('press')
+# def get_press_times(df):
+#     """
+#     Gets press start and stop from previously detected presses in df
+#     """
+#     press_data = [ [int(p), group.index.min(), group.index.max()] for p, group in df.groupby('press') ]
+#     return pd.DataFrame(press_data, columns=['press', 'start', 'stop']).set_index('press')
 
 def get_press_extents(df):
     """
@@ -198,7 +200,7 @@ def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
         'linewidth': 2,
         'linestyle': '--',
     }
-    press_style = {
+    press_region = {
         'color': 'tab:blue',
         'alpha': 0.2,
     }
@@ -213,126 +215,168 @@ def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     exts = get_press_extents(df)
-    for p in df.press.dropna().unique():
+    for p in df.press.dropna().unique().astype(int):
         #plt.plot(df[df.press == press].force, '-', lw=3, zorder=10, label=int(press))
-        press = df[df.press == p]
-        start = press.index.min()
-        stop = press.index.max()
-        if presses:
-            plt.axvspan(start, stop, zorder=1, **press_style)
+        events = get_press_events(df, p)
+        # press = df[df.press == p]
+        # start = press.index.min()
+        # stop = press.index.max()
+        plt.axvspan(events['start'], events['stop'], zorder=1, **press_region)
+        plt.plot(df.loc[events['hold']:events['release'], 'force'], **hold_style)
         if extents:
             y = exts.loc[p]
-            plt.plot([start, stop], [y, y], **extent_style)
+            plt.plot([events['start'], events['stop']], [y, y], **extent_style)
         
 
-def get_press_data(force, sensor, cell, patch=1):
-    press = cell_to_press[cell]
+def get_press_events(force, press, smoothness=0.005):
     f = force[force.press == press]
-    other = ~force.index.isin(f.index)
-    peak = f.force.argmax()
-    f_down = f.iloc[:peak]
-    f_up = f.iloc[peak:]
-    s_down = sensor[sensor.index.isin(f_down.index)]
-    s_up = sensor[sensor.index.isin(f_up.index)]
+    density, bins = np.histogram(f.force, density=True) #(not smoothed)
 
-    adj_mask = np.zeros((len(force),), dtype=bool)
+    bin_index = np.digitize(f.force, bins)
+    bin_index = np.where(bin_index <= 0, 1, bin_index)
+    bin_index = np.where(bin_index >= len(bins), len(bins) - 1, bin_index)
+
+    density_margin = 0.3
+    density_low = np.nanmin(density)
+    density_high = np.nanmax(density)
+    density_threshold = density_margin*(density_high - density_low) + density_low
+    near_peak = np.where(density[bin_index - 1] > density_threshold, True, False)
+
+    delta = np.diff(f.force.rolling(int(smoothness*len(f)), center=True).mean())
+    delta = np.concatenate([[0], np.where(np.isnan(delta), 0, delta)])
+
+    increasing = delta >= 0  #(actually non-decreasing)
+    convex = np.concatenate([[0], np.diff(increasing)])
+    convex_nearpeak = np.where(convex & near_peak)[0]
+    return {
+        'start': f.index.min(),
+        'hold': f.index[convex_nearpeak[0]],
+        'release': f.index[convex_nearpeak[-1]],
+        'stop': f.index.max(),
+    }
+
+def get_press_times(df):
+    """
+    Returns a DataFrame of press events for all presses
+    """
+    data = {}
+    for press in df.press.dropna().unique().astype(int):
+        data.setdefault('press', []).append(press)
+        events = get_press_events(df, press)
+        for event in events:
+            data.setdefault(event, []).append(events[event])
+    return pd.DataFrame(data).set_index('press')
+
+def get_adjacent_mask(force, cell):
+    """
+    Returns a mask of the timeline of force that is True where a cell
+    adjacent to <cell> is pressed.
+    """
+    mask = np.zeros((len(force),), dtype=bool)
     for adjacent_cell in adjacent_to_cell[cell]:
-        adj_mask |= force.press == cell_to_press[adjacent_cell]
-    f_adj = force[adj_mask]
-    s_adj = sensor[sensor.index.isin(f_adj.index)]
-    other &= ~adj_mask
-    return f_down, f_up, s_down, s_up, f_adj, s_adj, other
+        mask |= force.press == cell_to_press[adjacent_cell]
+    return mask
 
 def plot_cell_vs(force, sensor, cell, patch=1):
-    args = get_press_data(force, sensor, cell, patch)
-    f_down, f_up, s_down, s_up, f_adj, s_adj, other = args
-    f_notpressed = force[other]
-    s_notpressed = sensor[sensor.index.isin(f_notpressed.index)]
+    events = get_press_events(force, cell_to_press[cell])
+    start = events['start']
+    hold = events['hold']
+    release = events['release']
+    stop = events['stop']
+
+    adjacent = get_adjacent_mask(force, cell)
+    other = ~adjacent & ~force.index.isin(force[start:stop].index)
 
     ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    plt.xlabel(force_label, fontsize=12)
+    for spine in ax.spines:
+        ax.spines[spine].set_visible(False)
     plt.ylabel("Raw sensor value", fontsize=12)
+    plt.xlabel(force_label, fontsize=12)
     plt.xlim(min(0, force.force.min()), force.force.max())
 
-    plt.plot(f_down.force, s_down[patch, cell], zorder=11, **down_style)
-    plt.plot(f_up.force, s_up[patch, cell], zorder=10, **up_style)
-    plt.plot(f_adj['force'], s_adj[patch, cell],
-             '-', lw=1, c='0.2', zorder=5,
-             label='adjacent cell pressed (' + ', '.join(str(c) for c in sorted(adjacent_to_cell[cell])) + ')',)
-    plt.plot(f_notpressed.force, s_notpressed[patch, cell], zorder=1, **other_style)
-    #plt.legend(loc='upper center', ncol=2, frameon=False, bbox_to_anchor=(0.5, -0.2))
-    handles, labels = plt.gca().get_legend_handles_labels()
-    return args, handles, labels
+    # This cell pressed
+    plt.plot(force.loc[start:hold, 'force'], sensor.loc[start:hold, (patch, cell)],
+             '-', zorder=10, **press_style)
+    plt.plot(force.loc[hold:release, 'force'], sensor.loc[hold:release, (patch, cell)],
+             '-', zorder=12, **hold_style)
+    plt.plot(force.loc[release:stop, 'force'], sensor.loc[release:stop, (patch, cell)],
+             '-', zorder=10, **release_style)
 
-def plot_cell_press(force, sensor, cell, patch=1, args=None):
+    # Adjacent cells pressed
+    force_adjacent = force.loc[adjacent, 'force']
+    sensor_adjacent = sensor.loc[sensor.index.isin(force[adjacent].index), (patch, cell)]
+    adj_lbl = 'adjacent cell pressed (' + ', '.join(str(c) for c in sorted(adjacent_to_cell[cell])) + ')'
+    plt.plot(force_adjacent, sensor_adjacent, '-', zorder=5, label=adj_lbl, **adjacent_style)
+
+    # Other
+    force_other = force.loc[other, 'force']
+    sensor_other = sensor.loc[sensor.index.isin(force[other].index), (patch, cell)]
+    plt.plot(force_other, sensor_other, '-', **other_style)
+
+    handles, labels = plt.gca().get_legend_handles_labels()
+    return events, handles, labels
+
+def plot_cell_press(force, sensor, cell, patch=1, events=None):
     ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['bottom'].set_visible(False)
-    ax.spines['left'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+    for spine in ax.spines:
+        ax.spines[spine].set_visible(False)
     plt.xlabel("Time from press", fontsize=12)
     #plt.ylabel("Sensor value", fontsize=12)
-
-    args_, handles, labels = args
-    if args_ is None:
-        args_ = get_press_data(force, sensor, cell, patch)
-    f_down, f_up, s_down, s_up, f_adj, s_adj, other = args_
-
-    #margin = np.timedelta64(3, 's')
 
     fmtr = FuncFormatter(lambda x, pos: '%gs' % (x*1e-9))
     ax.xaxis.set_major_formatter(fmtr)
 
+    if events is None:
+        events = get_press_events(force, cell_to_press[cell])
+    start = events['start']
+    hold = events['hold']
+    release = events['release']
+    stop = events['stop']
+
     # Previous press
     prev_press_num = cell_to_press[cell] - 1
-    if prev_press_num < 0: # no previous press
+    if prev_press_num < 0:
         end_of_prev = force.index.min()
-        start_of_prev = force.index.min()
     else:
         end_of_prev = force[force.press == prev_press_num].index.max()
-        start_of_prev = force[force.press == prev_press_num].index.min()
 
     # Next press
     next_press_num = cell_to_press[cell] + 1
-    if next_press_num > force.press.max():  # no next press
+    if next_press_num > force.press.max():
         start_of_next = force.index.max()
-        end_of_next = force.index.max()
     else:
         start_of_next = force[force.press == next_press_num].index.min()
-        end_of_next = force[force.press == next_press_num].index.max()
 
-    before = (sensor.index > end_of_prev) & (sensor.index <= s_down.index.min())
-    after = (sensor.index < start_of_next) & (sensor.index >= s_up.index.max())
-    start_of_press = s_down.index.min()
+    # before = (sensor.index > end_of_prev) & (sensor.index <= start)
+    # after = (sensor.index < start_of_next) & (sensor.index >= stop)
 
-    s_down.index -= start_of_press
-    s_up.index -= start_of_press
-    sensor_copy = sensor.copy()
-    sensor_copy.index -= start_of_press
+    s = sensor.loc[end_of_prev:start_of_next, (patch, cell)]
+    s.index -= start
+    s_press = s.loc[start - start:hold - start]
+    s_hold = s.loc[hold - start:release - start]
+    s_release = s.loc[release - start:stop - start]
 
-    plt.plot(s_down[patch, cell], zorder=10, **down_style)
-    plt.plot(s_up[patch, cell], zorder=10, **up_style)
+    plt.plot(s_press, zorder=10, **press_style)
+    plt.plot(s_hold, zorder=20, **hold_style)
+    plt.plot(s_release, zorder=10, **release_style)
 
-    plt.plot(sensor_copy[before][patch, cell], zorder=1, **other_style)
-    plt.plot(sensor_copy[after][patch, cell], zorder=1, **other_style)
+    plt.plot(s.loc[:start - start], zorder=1, **other_style)
+    plt.plot(s.loc[stop - start:], zorder=1, **other_style)
 
-    plt.figlegend(handles=handles, labels=labels, loc='lower center', ncol=4, frameon=False)
-    return args_
+    handles, labels = plt.gca().get_legend_handles_labels()
+    return events, handles, labels
 
 def plot_cell(cell, patch=1):
     global force, sensor
     fig = plt.figure(figsize=(9, 3))
     left = plt.subplot(1, 2, 1)
-    args = plot_cell_vs(force, sensor, cell, patch)
+    events, handles, labels = plot_cell_vs(force, sensor, cell, patch)
     right = plt.subplot(1, 2, 2, sharey=left)
-    plot_cell_press(force, sensor, cell, patch, args=args)
+    plot_cell_press(force, sensor, cell, patch, events=events)
     
     plt.suptitle("Cell %d" % cell, fontsize=14)
     plt.subplots_adjust(left=0.13, right=0.95, top=0.90, bottom=0.3, wspace=0.3)
+    plt.figlegend(handles=handles, labels=labels, loc='lower center', ncol=5, frameon=False)
 
 cmdline = parse_cmdline()
 force_orig = read_force(cmdline.force)
@@ -384,46 +428,46 @@ for (row, col), cell in np.ndenumerate(placement):
         except IndexError:
             pass
 
-def align(f, s, offset=0):
-    if type(offset) == np.ndarray and len(offset) == 1:
-        offset = offset[0].astype(int)
-    if type(s.columns) == pd.core.indexes.multi.MultiIndex:
-        s.columns = s.columns.to_flat_index()
-    f.index -= f.index.min()
-    f.index += s.index.min() + np.timedelta64(offset, 'ms')
-    index = s.index.intersection(f.index)
-    return f.loc[index], s.loc[index]
+# def align(f, s, offset=0):
+#     if type(offset) == np.ndarray and len(offset) == 1:
+#         offset = offset[0].astype(int)
+#     if type(s.columns) == pd.core.indexes.multi.MultiIndex:
+#         s.columns = s.columns.to_flat_index()
+#     f.index -= f.index.min()
+#     f.index += s.index.min() + np.timedelta64(offset, 'ms')
+#     index = s.index.intersection(f.index)
+#     return f.loc[index], s.loc[index]
         
-def plot_vs(force, sensor, offset=0):
-    f = force.copy()
-    #s.index -= sensor.index.min()
-    #f.index = f.index - f.index.min() + np.timedelta64(offset, 'ms')
-    #y = s[s.index.isin(f.index)]
-    if type(sensor.columns) == pd.core.indexes.multi.MultiIndex:
-        sensor.columns = sensor.columns.to_flat_index()
-    x, y = align(f, sensor, offset)
-    lines = [plt.plot(x['force'], y[col], '-', lw=0.1, c='k', label=col)[0] for col in y.columns]
-    return plt.gcf(), (f, sensor, lines)
+# def plot_vs(force, sensor, offset=0):
+#     f = force.copy()
+#     #s.index -= sensor.index.min()
+#     #f.index = f.index - f.index.min() + np.timedelta64(offset, 'ms')
+#     #y = s[s.index.isin(f.index)]
+#     if type(sensor.columns) == pd.core.indexes.multi.MultiIndex:
+#         sensor.columns = sensor.columns.to_flat_index()
+#     x, y = align(f, sensor, offset)
+#     lines = [plt.plot(x['force'], y[col], '-', lw=0.1, c='k', label=col)[0] for col in y.columns]
+#     return plt.gcf(), (f, sensor, lines)
 
-def plot_vs_update(offset, args):
-    f, sensor, lines = args
-    #f.index = f.index - f.index.min() + np.timedelta64(1000*offset, 'ms')
-    #y = s[s.index.isin(f.index)]
-    x, y = align(f, sensor, offset*1000)
-    # if len(y) == 0:
-    #     global anim
-    #     anim.event_source.stop()
-    #     print("Stopped")
-    #     return
-    for i, line in enumerate(lines):
-        line.set_ydata(y.iloc[:, i])
-    #print(offset, align_score(x, y))
+# def plot_vs_update(offset, args):
+#     f, sensor, lines = args
+#     #f.index = f.index - f.index.min() + np.timedelta64(1000*offset, 'ms')
+#     #y = s[s.index.isin(f.index)]
+#     x, y = align(f, sensor, offset*1000)
+#     # if len(y) == 0:
+#     #     global anim
+#     #     anim.event_source.stop()
+#     #     print("Stopped")
+#     #     return
+#     for i, line in enumerate(lines):
+#         line.set_ydata(y.iloc[:, i])
+#     #print(offset, align_score(x, y))
 
 
-def alignment_animation(force, sensor):
-    fig, args = plot_vs(force, sensor)
-    anim = FuncAnimation(fig, func=plot_vs_update, fargs=(args,), interval=10)
-    plt.show()
+# def alignment_animation(force, sensor):
+#     fig, args = plot_vs(force, sensor)
+#     anim = FuncAnimation(fig, func=plot_vs_update, fargs=(args,), interval=10)
+#     plt.show()
 
 
 def plot_dist(X, color='tab:blue', xlabel=None, ylabel='Value'):
