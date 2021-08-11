@@ -5,23 +5,23 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 from matplotlib.animation import FuncAnimation
-
-from sklearn import metrics
-from sklearn.linear_model import LinearRegression
 
 force_label = "Indentation force (N)"
 
 other_style = { 'ls': '-', 'lw': 0.5, 'c': '0.7', 'label': 'other' }
-down_style = { 'ls': '-', 'lw': 3, 'c': 'r', 'label': 'press' }
-up_style = { 'ls': '-', 'lw': 3, 'c': 'b', 'label': 'release' }
+down_style = { 'ls': '-', 'lw': 3, 'c': 'tab:blue', 'label': 'press' }
+up_style = { 'ls': '-', 'lw': 3, 'c': 'cadetblue', 'label': 'release' }
 
 def parse_cmdline():
     parser = argparse.ArgumentParser()
     parser.add_argument('force', help='input force data')
     parser.add_argument('sensor', help='output sensor data')
     parser.add_argument('--threshold', '-t', type=float, default=None, help='threshold for press detection')
-    #parser.add_argument('--alpha', '-a', type=float, default=0.1, help='alpha value for exponential averaging')
+    parser.add_argument('--digits', type=int, default=3, help='number of digits for resolution')
+    parser.add_argument('--verbose', '-v', action='store_true', default=True, help='show more progress')
+    parser.add_argument('--shift', '-s', metavar='SECONDS', type=float, help='shift sensor in time by SECONDS')
     return parser.parse_args()
 
 def SI_bytes(x, base=2, space=False):
@@ -43,7 +43,8 @@ def SI_bytes(x, base=2, space=False):
     return fmt % (value, ' ' if space else '', prefix) if prefix else '%.0f' % x
 
 def status(*args):
-    print(*args, file=sys.stderr)
+    if cmdline.verbose:
+        print(*args, file=sys.stderr)
 
 def check_timeline(df, threshold=np.timedelta64(1, 's')):
     steps = pd.Series(df.index).diff()
@@ -62,6 +63,10 @@ def read_sensor(filename):
     df = df.fillna(0).astype(int)
     addr = df.columns.str.extract(r'patch(\d+)_cell(\d+)').astype(int)
     df.columns = addr.itertuples(index=False, name=None)
+    if cmdline.shift:
+        shift = np.timedelta64(int(cmdline.shift*1e9), 'ns')
+        status("Shifting sensor values by", shift/np.timedelta64(1, 's'), "s")
+        df.index += shift
     return df
 
 
@@ -83,7 +88,7 @@ def resample(df, freq='ms'):
     
 
 def smooth(df, size=1000):
-    return df.rolling(window=size).mean().dropna()
+    return df.rolling(window=size, center=True).mean().dropna()
 
 
 def search(cmp_fn, low, high, iterations=20, args=[]):
@@ -114,6 +119,19 @@ def plot_path(df):
     ax.spines['right'].set_visible(False)
     ax.xaxis.set_visible(False)
 
+def most_freq(X, smooth='sqrt', hist=False):
+    """
+    """
+    #X_smooth = pd.Series(X).rolling(smooth).mean().dropna().values if smooth else X
+    count, edges = np.histogram(X, bins='sqrt', density=True)
+    if smooth == 'sqrt':
+        smooth = 2*int(0.02*np.sqrt(len(X)))
+    if smooth:
+        count = pd.Series(count).rolling(smooth, center=True).mean().values
+    c = np.nanargmax(count)
+    fq = edges[c:c+2].mean()
+    return (fq, count, edges) if hist else fq
+
 def cut_threshold(df, threshold, step, field='force'):
     above = df[df[field].notna() & (df[field] >= threshold)]
     presses = (pd.Series(above.index).diff() > step).cumsum()
@@ -141,32 +159,71 @@ def detect_presses(df, threshold=None, expected=16):
         #status("Searching for threshold value")
         #threshold = search(cmp_cut, df.force.min(), df.force.max())
         threshold = None
-        for x in np.arange(df.force.min().round(-3), (df.force.min() + df.force.max())/2, 0.001):
+        for x in np.arange(df.force.min().round(cmdline.digits), (df.force.min() + df.force.max())/2, 0.001):
             if cut_threshold(force, x, step).nunique()[0] == expected:
-                threshold = x
+                threshold = x.round(cmdline.digits)
                 break
         if threshold is None:
             status("Could not find threshold value")
             breakpoint()
-        status("Found threshold value", threshold)
+        status("Found threshold value", threshold, "N")
     presses = cut_threshold(df, threshold, step)
 
     if presses['press'].nunique() != expected:
         status("Warning: Expected", expected, "presses, but found", presses.nunique(), "(check threshold value)")
     return presses
 
+def get_press_times(df):
+    """
+    Gets press start and stop from previously detected presses in df
+    """
+    press_data = [ [int(p), group.index.min(), group.index.max()] for p, group in df.groupby('press') ]
+    return pd.DataFrame(press_data, columns=['press', 'start', 'stop']).set_index('press')
 
-def plot_presses(df):
+def get_press_extents(df):
+    """
+    Gets the extents (most frequent) of the presses in newtons
+    """
+    d = [[int(p), most_freq(group.force)] for p, group in df.groupby('press')]
+    return pd.DataFrame(d, columns=['press', 'extent']).set_index('press')
+
+def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
+    line_style = {
+        'color': 'k',
+        'linewidth': 1,
+        'linestyle': '-',
+    }
+    extent_style = {
+        'color': 'tab:blue',
+        'linewidth': 2,
+        'linestyle': '--',
+    }
+    press_style = {
+        'color': 'tab:blue',
+        'alpha': 0.2,
+    }
+    plt.figure(figsize=figsize)
+    plt.subplots_adjust(left=0.05, right=0.95)
     plt.xticks(rotation=-30, ha='left', va='top')
-    plt.plot(df.force, '-', lw=1, c='0.5', zorder=1)
+    plt.plot(df.force, zorder=10, **line_style)
     plt.xlabel("Time", fontsize=14)
     plt.ylabel(force_label, fontsize=14)
     plt.ylim(ymin=0)
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
-    for press in df.press.dropna().unique():
-        plt.plot(df[df.press == press].force, '-', lw=3, zorder=10, label=int(press))
+    exts = get_press_extents(df)
+    for p in df.press.dropna().unique():
+        #plt.plot(df[df.press == press].force, '-', lw=3, zorder=10, label=int(press))
+        press = df[df.press == p]
+        start = press.index.min()
+        stop = press.index.max()
+        if presses:
+            plt.axvspan(start, stop, zorder=1, **press_style)
+        if extents:
+            y = exts.loc[p]
+            plt.plot([start, stop], [y, y], **extent_style)
+        
 
 def get_press_data(force, sensor, cell, patch=1):
     press = cell_to_press[cell]
@@ -198,7 +255,7 @@ def plot_cell_vs(force, sensor, cell, patch=1):
     ax.spines['left'].set_visible(False)
     ax.spines['right'].set_visible(False)
     plt.xlabel(force_label, fontsize=12)
-    plt.ylabel("Sensor value", fontsize=12)
+    plt.ylabel("Raw sensor value", fontsize=12)
     plt.xlim(min(0, force.force.min()), force.force.max())
 
     plt.plot(f_down.force, s_down[patch, cell], zorder=11, **down_style)
@@ -226,6 +283,9 @@ def plot_cell_press(force, sensor, cell, patch=1, args=None):
     f_down, f_up, s_down, s_up, f_adj, s_adj, other = args_
 
     #margin = np.timedelta64(3, 's')
+
+    fmtr = FuncFormatter(lambda x, pos: '%gs' % (x*1e-9))
+    ax.xaxis.set_major_formatter(fmtr)
 
     # Previous press
     prev_press_num = cell_to_press[cell] - 1
@@ -324,24 +384,6 @@ for (row, col), cell in np.ndenumerate(placement):
         except IndexError:
             pass
 
-def align_score(X, Y, patch=1):
-    if len(X) == 0 or len(Y) == 0:
-        return 0
-    presses = X.press.dropna().unique().astype(int)
-    r2 = []
-    score = 0
-    for press_num in [0]:#presses:
-        press = X.press == press_num
-        if not press.any():
-            continue
-        x = X[press]['force'].values.reshape(-1, 1)
-        y = Y[press][patch, flatplace[press_num]].values
-        lin = LinearRegression().fit(x, y)
-        r2 = metrics.r2_score(y, lin.predict(x))
-        score += r2
-    print(score)
-    return score
-
 def align(f, s, offset=0):
     if type(offset) == np.ndarray and len(offset) == 1:
         offset = offset[0].astype(int)
@@ -384,22 +426,106 @@ def alignment_animation(force, sensor):
     plt.show()
 
 
+def plot_dist(X, color='tab:blue', xlabel=None, ylabel='Value'):
+    freqline_style = {
+        'color': 'k',
+        'linestyle': '--',
+        'linewidth': 2,
+    }
+    hist_style = {
+        'facecolor': color,
+        'edgecolor': color,
+        'alpha': 0.5,
+        'linewidth': 0.5,
+    }
+    histline_style = {
+        'color': color,
+        'linestyle': '-',
+        'linewidth': 1.5,
+    }
 
-# max_offset = int((sensor.index.max() - sensor.index.min()).total_seconds()*1000)
+    fig = plt.figure(figsize=(9, 3))
+    left = plt.subplot(1, 2, 1)
+    right = plt.subplot(1, 2, 2, sharey=left)
+    #plt.xscale('log')
 
-# def inverted_score(offset_ratio):
-#     x, y = align(force, sensor, offset_ratio*max_offset)
-#     return -align_score(x, y)
+    for ax in [left, right]:
+        for spine in ax.spines:
+            ax.spines[spine].set_visible(False)
 
-# # def inverted_score(offset):
-# #     x, y = align(force, sensor, offset)
-# #     return -align_score(x, y)
+    #width = int(0.02*np.sqrt(len(X)))
+    fq, hist_count, hist_edges = most_freq(X, hist=True)#, smooth=2*width)
+    hist_edge_centers = pd.Series(hist_edges).rolling(2).mean().dropna().values
 
-# def in_range(**kwargs):
-#     x = kwargs['x_new']
-#     return 0.0 <= x <= 1.0
+    def on_xlims_changed(ax):
+        right.cla()
 
-#status("Aligning")
-# from scipy.optimize import minimize, basinhopping
-# #res = minimize(inverted_score, [0], bounds=((0, max_offset),))
-# res = basinhopping(inverted_score, [0], niter=100, accept_test=in_range)
+        # Xr = X[type(X.index[0])(xmin):type(X.index[0])(xmax)]
+        # right.hist(Xr, bins='sqrt', histtype='stepfilled', density=True, orientation='horizontal', **hist_style)
+
+        #xmin, xmax = ax.get_xlim()
+        #Xzoom = X[type(X.index[0])(xmin):type(X.index[0])(xmax)]
+        freq, bins, _ = right.hist(
+            #Xzoom,
+            X,
+            bins='sqrt', density=True,
+            histtype='stepfilled',
+            orientation='horizontal',
+            **hist_style)
+        # bin_centers = pd.Series(bins).rolling(2).mean().dropna().values
+        # freq_smooth = pd.Series(freq).rolling(2*width).mean().dropna().values
+        # right.plot(freq_smooth, bin_centers[width:width + len(freq_smooth)])
+
+        # fq = most_freq(Xzoom, 2*width)
+        right.plot(hist_count, hist_edge_centers, **histline_style)
+        fq_str = '{:.{digits}f}'.format(fq, digits=round(-int(np.floor(np.log10(np.diff(bins).mean())))))
+        right.axhline(fq, label=fq_str, **freqline_style)
+        right.set_xlabel('Probability density')
+        right.set_xticks([])
+        right.legend(frameon=False)
+
+    # Left line plot
+    left.set_xlabel(xlabel if xlabel else 'Sequence')
+    left.set_ylabel(ylabel)
+    if type(X) == pd.core.series.Series or type(X) == pd.core.frame.DataFrame:
+        #index = X.index - X.index.min()
+        #left.plot(X.index.values.astype(float), X.values, c=color)
+        index = X.index
+        if xlabel is None and 'time' in str(type(X.index)).lower():
+            index = (index - index.min()).total_seconds()
+            left.set_xlabel('Time (s)')
+            #left.set_xticks([index.min(), index.max()])
+        left.plot(index, X.values, c=color)
+    else:
+        left.plot(X, c=color)
+    on_xlims_changed(left)
+    left.axhline(fq, **freqline_style)
+    #left.callbacks.connect('xlim_changed', on_xlims_changed)
+
+    plt.subplots_adjust(left=0.1, bottom=0.17, right=0.95, top=0.95)
+    return fq
+    
+
+def calibrate(force, sensor, patch=1):
+    presses = get_press_times(force)
+    not_pressed = force[force.press.isna()].index
+    idle_sensor = sensor.loc[sensor.index.isin(not_pressed), :]
+    force_base = most_freq(force[force.press.isna()].force)
+    if cmdline.verbose:
+        status("Baseline force", force_base, "N")
+    data = []
+    for p in presses.index:
+        cell = press_to_cell[p]
+        addr = (patch, cell)
+        cell_values = sensor.loc[presses.loc[p].start:presses.loc[p].stop, addr]
+
+        activated = int(most_freq(cell_values).round())
+        baseline = int(most_freq(idle_sensor[addr]).round())
+
+        force_active = most_freq(force[force.press == p].force)
+        force_applied = force_active - force_base
+
+        data.append([patch, cell, baseline, activated, force_applied])
+    data = sorted(data)
+    df = pd.DataFrame(data, columns=['patch', 'cell', 'baseline', 'activated', 'force']).set_index(['patch', 'cell'])
+    return df
