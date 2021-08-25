@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 from matplotlib.animation import FuncAnimation
+from sklearn.cluster import KMeans
 
 force_label = "Indentation force (N)"
 
@@ -186,27 +187,35 @@ def get_press_extents(df):
     """
     Gets the extents (most frequent) of the presses in newtons
     """
-    d = [[int(p), most_freq(group.force)] for p, group in df.groupby('press')]
-    return pd.DataFrame(d, columns=['press', 'extent']).set_index('press')
+    data = []
+    for p in df.press.dropna().unique().astype(int):
+        events = get_press_events(df, p)
+        #extent = most_freq(df.loc[events['hold']:events['release'], 'force'])
+        extent = df.loc[events['hold']:events['release'], 'force'].mean()
+        data.append((p, extent))
+    return pd.DataFrame(data, columns=['press', 'extent']).set_index('press')
+    # d = [[int(p), most_freq(group.force)] for p, group in df.groupby('press')]
+    # return pd.DataFrame(d, columns=['press', 'extent']).set_index('press')
 
 def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
     line_style = {
         'color': 'k',
-        'linewidth': 1,
+        'linewidth': 0.5,
         'linestyle': '-',
     }
     extent_style = {
-        'color': 'tab:blue',
+        'color': 'k',
         'linewidth': 2,
         'linestyle': '--',
     }
     press_region = {
-        'color': 'tab:blue',
-        'alpha': 0.2,
+        'color': '0.85',
+        #'alpha': 0.2,
     }
     plt.figure(figsize=figsize)
     plt.subplots_adjust(left=0.05, right=0.95)
-    plt.xticks(rotation=-30, ha='left', va='top')
+    #plt.xticks(rotation=-30, ha='left', va='top')
+    plt.xticks(ha='left', va='top')
     plt.plot(df.force, zorder=10, **line_style)
     plt.xlabel("Time", fontsize=14)
     plt.ylabel(force_label, fontsize=14)
@@ -215,6 +224,8 @@ def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
     exts = get_press_extents(df)
+    ymin, ymax = plt.ylim()
+    force_baseline = most_freq(force[force.press.isna()].force)
     for p in df.press.dropna().unique().astype(int):
         #plt.plot(df[df.press == press].force, '-', lw=3, zorder=10, label=int(press))
         events = get_press_events(df, p)
@@ -222,11 +233,40 @@ def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
         # start = press.index.min()
         # stop = press.index.max()
         plt.axvspan(events['start'], events['stop'], zorder=1, **press_region)
-        plt.plot(df.loc[events['hold']:events['release'], 'force'], **hold_style)
+        lbl = '%d ' % (press_to_cell[p])
+        if p == 0:
+            lbl = 'cell  ' + lbl
+        plt.text(events['start'], 0.99*ymax, lbl, ha='right', va='top', zorder=10)
+        plt.plot(df.loc[events['start']:events['hold'], 'force'], zorder=20, **press_style)
+        plt.plot(df.loc[events['hold']:events['release'], 'force'], zorder=20, **hold_style)
+        plt.plot(df.loc[events['release']:events['stop'], 'force'], zorder=20, **release_style)
         if extents:
             y = exts.loc[p]
-            plt.plot([events['start'], events['stop']], [y, y], **extent_style)
+            plt.plot([events['start'], events['stop']], [y, y], zorder=30, **extent_style)
+    plt.axhline(force_baseline, ls='-', lw=0.5, c='0.6', zorder=1)
+    xmin, xmax = plt.xlim()
+    plt.text(xmin, force_baseline, '  baseline\n  %.4f N\n' % (force_baseline), ha='left', va='bottom')
         
+
+def plot_based_sensor(force, sensor, patch=1):
+    calib = calibrate(force, sensor)
+    not_pressed = force[force.press.isna()].index
+    idle_sensor = sensor.loc[sensor.index.isin(not_pressed), :]
+    for p in force.press.dropna().unique().astype(int):
+        events = get_press_events(force, p)
+        cell = press_to_cell[p]
+        addr = (patch, cell)
+        baseline = calib.loc[addr, 'baseline']
+        #active = calib.loc[addr, 'activated']
+        #delta = active - baseline
+        #s = (sensor.loc[:, addr] - baseline)/delta
+        s = sensor.loc[:, addr] - baseline
+        plt.plot(s.loc[:events['start']], **other_style)
+        plt.plot(s.loc[events['start']:events['hold']], **press_style)
+        plt.plot(s.loc[events['hold']:events['release']], **hold_style)
+        plt.plot(s.loc[events['release']:events['stop']], **release_style)
+        plt.plot(s.loc[events['stop']:], **other_style)
+
 
 def get_press_events(force, press, smoothness=0.005):
     f = force[force.press == press]
@@ -236,11 +276,17 @@ def get_press_events(force, press, smoothness=0.005):
     bin_index = np.where(bin_index <= 0, 1, bin_index)
     bin_index = np.where(bin_index >= len(bins), len(bins) - 1, bin_index)
 
-    density_margin = 0.3
-    density_low = np.nanmin(density)
-    density_high = np.nanmax(density)
-    density_threshold = density_margin*(density_high - density_low) + density_low
-    near_peak = np.where(density[bin_index - 1] > density_threshold, True, False)
+    # # Threshold value between min and max
+    # density_margin = 0.3
+    # density_low = np.nanmin(density)
+    # density_high = np.nanmax(density)
+    # density_threshold = density_margin*(density_high - density_low) + density_low
+    # near_peak = np.where(density[bin_index - 1] > density_threshold, True, False)
+
+    # KMeans clustering of idle/active states
+    clusters = KMeans(2).fit(f.force.values.reshape(-1, 1))
+    pressed_cluster = clusters.cluster_centers_.argmax()
+    near_peak = clusters.labels_ == pressed_cluster
 
     delta = np.diff(f.force.rolling(int(smoothness*len(f)), center=True).mean())
     delta = np.concatenate([[0], np.where(np.isnan(delta), 0, delta)])
@@ -248,6 +294,7 @@ def get_press_events(force, press, smoothness=0.005):
     increasing = delta >= 0  #(actually non-decreasing)
     convex = np.concatenate([[0], np.diff(increasing)])
     convex_nearpeak = np.where(convex & near_peak)[0]
+
     return {
         'start': f.index.min(),
         'hold': f.index[convex_nearpeak[0]],
@@ -555,18 +602,23 @@ def calibrate(force, sensor, patch=1):
     not_pressed = force[force.press.isna()].index
     idle_sensor = sensor.loc[sensor.index.isin(not_pressed), :]
     force_base = most_freq(force[force.press.isna()].force)
+    force_extents = get_press_extents(force)
     if cmdline.verbose:
         status("Baseline force", force_base, "N")
     data = []
     for p in presses.index:
         cell = press_to_cell[p]
         addr = (patch, cell)
-        cell_values = sensor.loc[presses.loc[p].start:presses.loc[p].stop, addr]
 
-        activated = int(most_freq(cell_values).round())
+        events = get_press_events(force, p)
+
+        # cell_values = sensor.loc[presses.loc[p].start:presses.loc[p].stop, addr]
+        # activated = int(most_freq(cell_values).round())
+
+        activated = int(sensor.loc[events['hold']:events['release'], addr].mean().round())
         baseline = int(most_freq(idle_sensor[addr]).round())
 
-        force_active = most_freq(force[force.press == p].force)
+        force_active = force_extents.loc[p, 'extent']
         force_applied = force_active - force_base
 
         data.append([patch, cell, baseline, activated, force_applied])
