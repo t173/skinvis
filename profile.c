@@ -54,7 +54,7 @@ int profile_read(profile_t *p, const char *csvfile) {
 	const int ADDR_COLS = 2;
 	const int COLS_PER_POINT = 3;
 	int patches_found = 0;
-	struct patch_profile *current;
+	struct patch_profile *current = NULL;
 
 	if ( !(f = fopen(csvfile, "rt")) ) {
 		FATAL("Cannot open file: %s\n%s", csvfile, strerror(errno));
@@ -107,15 +107,18 @@ int profile_read(profile_t *p, const char *csvfile) {
 				
 				switch ( (col - ADDR_COLS) % COLS_PER_POINT ) {
 					case 0:
-						current->baseline[cell][point] = get_long(tok);
+						if ( current )
+							current->baseline[cell][point] = get_long(tok);
 						break;
 
 					case 1:
-						current->active[cell][point] = get_long(tok);
+						if ( current )
+							current->active[cell][point] = get_long(tok);
 						break;
 
 					case 2:
-						current->force[cell][point] = get_double(tok);
+						if ( current )
+							current->force[cell][point] = get_double(tok);
 						break;
 				}
 				break;
