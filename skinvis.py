@@ -73,6 +73,7 @@ def parse_cmdline():
     plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=1e6, help='set z-axis range to [-Z, +Z]')
     plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
     plot.add_argument('--calib', metavar='CSVFILE', help='calibration data from CSVFILE')
+    plot.add_argument('--profile', metavar='CSVFILE', help='dynamic range calibration from CSVFILE')
 
     cmdline = parser.parse_args()
     if cmdline.config == 'octocan':
@@ -463,6 +464,9 @@ def main():
         calib = pd.read_csv(cmdline.calib, index_col='cell', comment='#')
         calib['delta'] = abs(calib['max']) - abs(calib['baseline'])
         calib['inactive'] = (calib['delta'] == 0)
+
+    if cmdline.profile:
+        sensor.read_profile(cmdline.profile)
 
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()

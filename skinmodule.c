@@ -238,6 +238,19 @@ Skin_debuglog(SkinObject *self, PyObject *args) {
 	return Py_None;
 }
 
+static PyObject *
+Skin_read_profile(SkinObject *self, PyObject *args) {
+	DEBUGMSG("Skin_read_profile()");
+	char *filename;
+	if ( !self || !PyArg_ParseTuple(args, "s", &filename) ) {
+		WARNING("Skin_read_profile() could not parse argument");
+		return NULL;
+	}
+	skin_read_profile(&self->skin, filename);
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -250,6 +263,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
+	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
 	{ NULL }
 };
 
