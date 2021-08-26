@@ -16,10 +16,14 @@ typedef struct ring {
 	double expavg;
 	double alpha;
 
-	int calibrating;          // if currently calibrating
-	ring_data_t calibration;  // calibration value
+	// Live baseline recalibration
+	int calibrating;
 	int64_t calib_batch;
 	int calib_count;
+
+	// Current calibration parameters
+	ring_data_t calib0;  // (order 0) baseline calibration
+	ring_data_t calib1;  // (order 1) dynamic range
 } ring_t;
 
 int ring_init(ring_t *ring, int capacity);

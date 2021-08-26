@@ -19,4 +19,12 @@
 #define DEBUGMSG(msg, ...)
 #endif
 
+#define ALLOC(dst) do {\
+		if ( ( (dst) = malloc(sizeof(*(dst)))) == NULL ) \
+			FATAL("Cannot allocate %zd bytes", sizeof(*(dst))); } while (0)
+
+#define ALLOCN(dst, n) do {\
+		if ( ( (dst) = calloc((n), sizeof(*(dst))) ) == NULL ) \
+			FATAL("Cannot allocate %zd bytes", (n)*sizeof(*(dst))); } while (0)
+
 #endif /// UTIL_H_

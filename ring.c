@@ -18,7 +18,7 @@ ring_init(ring_t *ring, int capacity) {
 	}
 	ring->capacity = capacity;
 	ring->alpha = 0.5;
-	ring->calibration = 0;
+	ring->calib0 = 0;
 	return 1;
 }
 
@@ -33,7 +33,10 @@ ring_write(ring_t *ring, ring_data_t value) {
 		ring->calib_batch += value;
 		ring->calib_count++;
 	} else {
-		const ring_data_t cvalue = value - ring->calibration;
+		ring_data_t cvalue = value - ring->calib0;
+		if ( ring->calib1 )
+			cvalue = (1000*cvalue)/ring->calib1;
+
 		ring->buf[ring->pos++] = cvalue;
 		ring->pos %= ring->capacity;
 		const double alpha = ring->alpha;
@@ -59,7 +62,7 @@ ring_set_alpha(ring_t *ring, double alpha) {
 void
 ring_calibrate_start(ring_t *ring) {
 	ring->calibrating = 1;
-	ring->calibration = 0;
+	ring->calib0 = 0;
 	ring->calib_batch = 0;
 	ring->calib_count = 0;
 }
@@ -68,9 +71,9 @@ void
 ring_calibrate_stop(ring_t *ring) {
 	ring->calibrating = 0;
 	if ( ring->calib_count == 0 ) {
-		ring->calibration = 0;
+		ring->calib0 = 0;
 	} else {
-		ring->calibration = ring->calib_batch/ring->calib_count;
+		ring->calib0 = ring->calib_batch/ring->calib_count;
 	}
 	memset(ring->buf, 0, ring->capacity*sizeof(*ring->buf));
 	ring->expavg = 0;

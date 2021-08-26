@@ -142,14 +142,12 @@ skin_init(skin_t *skin, int patches, int cells, const char *device, int history)
 	DEBUGMSG("skin_init()");
 	if ( !skin )
 		return 0;
+	memset(skin, 0, sizeof(*skin));
 	skin->num_patches = patches;
 	skin->num_cells = cells;
 	skin->device = device;
 	skin->history = history;
-	skin->total_bytes = 0;
-	skin->total_records = 0;
-	skin->log = NULL;
-	skin->debuglog = NULL;
+	profile_init(&skin->profile);
 	return skin_allocate(skin, patches, cells);
 }
 
@@ -165,6 +163,7 @@ skin_free(skin_t *skin) {
 		}
 	}
 	free(skin->rings);
+	profile_free(&skin->profile);
 }
 
 void
@@ -400,12 +399,40 @@ skin_calibrate_stop(skin_t *skin) {
 	pthread_mutex_unlock(&skin->lock);
 }
 
+void
+skin_read_profile(skin_t *skin, const char *csv) {
+	DEBUGMSG("skin_read_profile(\"%s\")", csv);
+	if ( skin->calibrating )
+		skin_calibrate_stop(skin);
+
+	// Read profile from CSV file
+	int patches_read = profile_read(&skin->profile, csv);
+	if ( patches_read == 0 ) {
+		DEBUGMSG("Read %d patch profiles", patches_read);
+	}
+
+	// Translate into calibration parameters
+	pthread_mutex_lock(&skin->lock);
+	for ( int p=0; p < skin->num_patches; ++p ) {
+		if ( !skin->profile.patch[p] ) {
+			WARNING("No profile data for patch %d", p + 1);
+			continue;
+		}
+		struct patch_profile *prof = skin->profile.patch[p];
+		for ( int c=0; c < skin->num_cells; ++c ) {
+			RING_AT(skin, p, c).calib0 = prof->baseline[c][0];
+			RING_AT(skin, p, c).calib1 = (prof->active[c][0] - prof->baseline[c][0])/prof->force[c][0];
+		}
+	}
+	pthread_mutex_unlock(&skin->lock);
+}
+
 ring_data_t
 skin_get_calibration(skin_t *skin, int patch, int cell) {
 	// Note: patch number from user starts at 1
 	ring_data_t ret;
 	pthread_mutex_lock(&skin->lock);
-	ret = RING_AT(skin, patch - 1, cell).calibration;
+	ret = RING_AT(skin, patch - 1, cell).calib0;
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }

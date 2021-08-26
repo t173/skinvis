@@ -7,6 +7,7 @@
 
 #include <pthread.h>
 #include "ring.h"
+#include "profile.h"
 
 // Management of a skin sensor device
 typedef struct skin {
@@ -22,7 +23,9 @@ typedef struct skin {
 	pthread_t reader;
 	pthread_mutex_t lock;
 	int shutdown;
-	int calibrating;       // whether currently calibrating
+	int calibrating;       // whether currently baseline calibrating
+
+	profile_t profile;     // dynamic range calibration profile
 
 	// Performance statistics
 	long long total_bytes;   // odometer of bytes read from device
@@ -49,6 +52,11 @@ int skin_set_alpha(skin_t *skin, double alpha);
 void skin_calibrate_start(skin_t *skin);
 void skin_calibrate_stop(skin_t *skin);
 
+void skin_read_profile(skin_t *skin, const char *csv);
+
 ring_data_t skin_get_calibration(skin_t *skin, int patch, int cell);
+
+// Loads calibration profile from CSV file
+//int skin_load_profile(skin_t *skin, const char *csvfile);
 
 #endif // SKINTALK_H_
