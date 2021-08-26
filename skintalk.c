@@ -22,6 +22,7 @@
 
 #include "util.h"
 #include "skintalk.h"
+#include "profile.h"
 #include "ring.h"
 
 #define START_CODE  '1'
