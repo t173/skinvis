@@ -25,6 +25,8 @@ def parse_cmdline():
     parser.add_argument('--digits', type=int, default=3, help='number of digits for resolution')
     parser.add_argument('--verbose', '-v', action='store_true', default=True, help='show more progress')
     parser.add_argument('--shift', '-s', metavar='SECONDS', type=float, help='shift sensor in time by SECONDS')
+    parser.add_argument('--output', '-o', metavar='BASE', help='write output to files with BASE name')
+    parser.add_argument('--fmt', default='pdf', help='save figures as format FMT')
     return parser.parse_args()
 
 def SI_bytes(x, base=2, space=False):
@@ -219,7 +221,7 @@ def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
     plt.plot(df.force, zorder=10, **line_style)
     plt.xlabel("Time", fontsize=14)
     plt.ylabel(force_label, fontsize=14)
-    plt.ylim(ymin=0)
+    plt.ylim(ymin=min(0, df.force.min()))
     ax = plt.gca()
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -237,9 +239,16 @@ def plot_presses(df, presses=True, extents=True, figsize=(12, 4)):
         if p == 0:
             lbl = 'cell  ' + lbl
         plt.text(events['start'], 0.99*ymax, lbl, ha='right', va='top', zorder=10)
-        plt.plot(df.loc[events['start']:events['hold'], 'force'], zorder=20, **press_style)
-        plt.plot(df.loc[events['hold']:events['release'], 'force'], zorder=20, **hold_style)
-        plt.plot(df.loc[events['release']:events['stop'], 'force'], zorder=20, **release_style)
+        press = df.loc[events['start']:events['hold'], 'force']
+        hold = df.loc[events['hold']:events['release'], 'force']
+        release = df.loc[events['release']:events['stop'], 'force']
+
+        plt.plot(press, zorder=20, **press_style)
+        plt.plot(hold, zorder=20, **hold_style)
+        plt.plot(release, zorder=20, **release_style)
+        # plt.plot(df.loc[events['start']:events['hold'], 'force'], zorder=20, **press_style)
+        # plt.plot(df.loc[events['hold']:events['release'], 'force'], zorder=20, **hold_style)
+        # plt.plot(df.loc[events['release']:events['stop'], 'force'], zorder=20, **release_style)
         if extents:
             y = exts.loc[p]
             plt.plot([events['start'], events['stop']], [y, y], zorder=30, **extent_style)
@@ -294,6 +303,15 @@ def get_press_events(force, press, smoothness=0.005):
     increasing = delta >= 0  #(actually non-decreasing)
     convex = np.concatenate([[0], np.diff(increasing)])
     convex_nearpeak = np.where(convex & near_peak)[0]
+
+    if len(convex_nearpeak) == 0:
+        status("Warning: problem detecting press " + str(press))
+        return {
+            'start': f.index.min(),
+            'hold': f.index.min(),
+            'release': f.index.max(),
+            'stop': f.index.max(),
+        }
 
     return {
         'start': f.index.min(),
