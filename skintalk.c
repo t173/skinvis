@@ -412,19 +412,20 @@ skin_read_profile(skin_t *skin, const char *csv) {
 		DEBUGMSG("Read %d patch profiles", patches_read);
 	}
 
-	// Translate into calibration parameters
-	pthread_mutex_lock(&skin->lock);
+	// Set profile to rings
+	struct patch_profile *prof;
 	for ( int p=0; p < skin->num_patches; ++p ) {
-		if ( !skin->profile.patch[p] ) {
-			WARNING("No profile data for patch %d", p + 1);
+		prof = skin->profile.patch[p];
+		if ( !prof )
 			continue;
-		}
-		struct patch_profile *prof = skin->profile.patch[p];
 		for ( int c=0; c < skin->num_cells; ++c ) {
-			RING_AT(skin, p, c).calib0 = prof->baseline[c][0];
-			RING_AT(skin, p, c).calib1 = (prof->active[c][0] - prof->baseline[c][0])/prof->force[c][0];
+			RING_AT(skin, p, c).baseline = prof->baseline[c];
+			RING_AT(skin, p, c).c0 = prof->c0[c];
+			RING_AT(skin, p, c).c1 = prof->c1[c];
+			RING_AT(skin, p, c).c2 = prof->c2[c];
 		}
 	}
+
 	pthread_mutex_unlock(&skin->lock);
 }
 
@@ -433,7 +434,7 @@ skin_get_calibration(skin_t *skin, int patch, int cell) {
 	// Note: patch number from user starts at 1
 	ring_data_t ret;
 	pthread_mutex_lock(&skin->lock);
-	ret = RING_AT(skin, patch - 1, cell).calib0;
+	ret = RING_AT(skin, patch - 1, cell).c0;
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }

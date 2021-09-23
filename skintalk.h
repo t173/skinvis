@@ -52,11 +52,9 @@ int skin_set_alpha(skin_t *skin, double alpha);
 void skin_calibrate_start(skin_t *skin);
 void skin_calibrate_stop(skin_t *skin);
 
+// Loads calibration profile from CSV file
 void skin_read_profile(skin_t *skin, const char *csv);
 
 ring_data_t skin_get_calibration(skin_t *skin, int patch, int cell);
-
-// Loads calibration profile from CSV file
-//int skin_load_profile(skin_t *skin, const char *csvfile);
 
 #endif // SKINTALK_H_

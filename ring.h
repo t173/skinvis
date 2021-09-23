@@ -9,6 +9,9 @@
 
 typedef int32_t ring_data_t;
 
+// Calibrated values are scaled by this much
+#define CALIBRATED_SCALE 10000
+
 typedef struct ring {
 	int pos;
 	int capacity;
@@ -21,9 +24,9 @@ typedef struct ring {
 	int64_t calib_batch;
 	int calib_count;
 
-	// Current calibration parameters
-	ring_data_t calib0;  // (order 0) baseline calibration
-	ring_data_t calib1;  // (order 1) dynamic range
+	// Dynamic scaling parameters
+	ring_data_t baseline;
+	double c0, c1, c2;
 } ring_t;
 
 int ring_init(ring_t *ring, int capacity);

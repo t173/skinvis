@@ -32,7 +32,7 @@ static double get_double(const char *tok) {
 	return ret;
 }
 
-static struct patch_profile *profile_patch_new(int id) {
+static inline struct patch_profile *profile_patch_new(int id) {
 	struct patch_profile *p;
 	ALLOC(p);
 	memset(p, 0, sizeof(*p));
@@ -46,13 +46,9 @@ int profile_read(profile_t *p, const char *csvfile) {
 	size_t len = 0;
 	ssize_t line_len;
 	int num_cols = 0;
-	int num_points = 0;
 	int patch = 0;
 	int cell = 0;
-	int point = 0;
 	const char *const DELIM = ",";
-	const int ADDR_COLS = 2;
-	const int COLS_PER_POINT = 3;
 	int patches_found = 0;
 	struct patch_profile *current = NULL;
 
@@ -77,7 +73,7 @@ int profile_read(profile_t *p, const char *csvfile) {
 			}
 			
 			switch ( col ) {
-			case 0:
+			case 0:  // patch ID
 				patch = get_long(tok);
 
 				// Note patch IDs start at 1
@@ -92,46 +88,37 @@ int profile_read(profile_t *p, const char *csvfile) {
 				current = p->patch[patch - 1];
 				break;
 
-			case 1:
+			case 1:  // cell ID
 				cell = get_long(tok);
 				if ( cell < 0 || cell >= PROFILE_CELLS ) {
 					FATAL("line %d: Invalid cell number %d", line_num, cell);
 				}
 				break;
 
+			case 2:  // baseline value
+				current->baseline[cell] = get_long(tok);
+				break;
+
+			case 3: // c0
+				current->c0[cell] = get_double(tok);
+				break;
+
+			case 4: // c1
+				current->c1[cell] = get_double(tok);
+				break;
+
+			case 5: // c2
+				current->c2[cell] = get_double(tok);
+				break;
+
 			default:
-				point = (col - ADDR_COLS) / COLS_PER_POINT;
-				if ( point >= PROFILE_POINTS ) {
-					FATAL("line %d: Too many data points", line_num);
-				}
-				
-				switch ( (col - ADDR_COLS) % COLS_PER_POINT ) {
-					case 0:
-						if ( current )
-							current->baseline[cell][point] = get_long(tok);
-						break;
-
-					case 1:
-						if ( current )
-							current->active[cell][point] = get_long(tok);
-						break;
-
-					case 2:
-						if ( current )
-							current->force[cell][point] = get_double(tok);
-						break;
-				}
+				FATAL("line %d: Too many columns, expected %d", line_num, num_cols);
 				break;
 			}
-			//printf("line %d col %d: %s\n", line_num, col, tok);
 		}
 
 		if ( line_num == 1 ) {
 			num_cols = col;
-			num_points = (num_cols - ADDR_COLS) / COLS_PER_POINT;
-			if ( num_points != PROFILE_POINTS ) {
-				FATAL("Profile must have %d data points, found %d", PROFILE_POINTS, num_points);
-			}
 		}
 	}
 	free(line);

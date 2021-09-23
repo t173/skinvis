@@ -10,7 +10,7 @@
 
 // Expected number of cells and data points
 #define PROFILE_CELLS       16
-#define PROFILE_POINTS      1
+#define PROFILE_COEFS       3
 
 typedef struct profile {
 	const char *csvfile;
@@ -18,10 +18,11 @@ typedef struct profile {
 } profile_t;
 
 struct patch_profile {
-	int id;
-	int baseline[PROFILE_CELLS][PROFILE_POINTS];
-	int active[PROFILE_CELLS][PROFILE_POINTS];
-	double force[PROFILE_CELLS][PROFILE_POINTS];
+	int id;  // patch ID
+	int baseline[PROFILE_CELLS];
+	double c0[PROFILE_CELLS];  // intercept
+	double c1[PROFILE_CELLS];  // linear coefficient
+	double c2[PROFILE_CELLS];  // quadratic coefficient
 };
 
 // Reads calibration profile from CSV file into p

@@ -167,6 +167,9 @@ def detect_presses(df, threshold=None, expected=16):
         for x in np.arange(df.force.min().round(cmdline.digits), (df.force.min() + df.force.max())/2, 0.001):
             if cut_threshold(force, x, step).nunique()[0] == expected:
                 threshold = x.round(cmdline.digits)
+                # Expect most values to be less than threshold
+                if sum(df.force > threshold) > sum(df.force < threshold):
+                    continue
                 break
         if threshold is None:
             status("Could not find threshold value")
