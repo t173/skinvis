@@ -81,7 +81,7 @@ ring_calibrate_stop(ring_t *ring) {
 		WARNING("No calibration values recorded");
 		ring->baseline = 0;
 	} else {
-		ring->baseline = -ring->calib_batch/ring->calib_count;
+		ring->baseline = ring->calib_batch/ring->calib_count;
 	}
 	memset(ring->buf, 0, ring->capacity*sizeof(*ring->buf));
 	ring->expavg = 0;

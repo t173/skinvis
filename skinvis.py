@@ -72,7 +72,7 @@ def parse_cmdline():
     plot.add_argument('--zmax', type=float, help='set maximum z-axis for 3D plots')#, default=75000)
     plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=1e6, help='set z-axis range to [-Z, +Z]')
     plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
-    plot.add_argument('--calib', metavar='CSVFILE', help='calibration data from CSVFILE')
+    #plot.add_argument('--calib', metavar='CSVFILE', help='calibration data from CSVFILE') #old temp calib method for demo
     plot.add_argument('--profile', metavar='CSVFILE', help='dynamic range calibration from CSVFILE')
 
     cmdline = parser.parse_args()
@@ -166,18 +166,18 @@ def allline_init(sensor):
             text = str(patch) + ',' + str(cell)
             h = sensor.get_history(patch, cell)
             disabled = False
-            if calib is not None:
-                # Have calibration
-                if calib.loc[cell, 'inactive']:
-                    disabled = True
-                    text += ' disabled'
-                    ax.text(0.1, 0.9, text, transform=ax.transAxes, fontsize=10)
-                    ax.set_yticks([])
-                    continue
-                else:
-                    delta = calib.loc[pos_to_cell[cell_pos], 'delta'].astype(float)
-                    h = h.astype(float)/delta
-                    ax.set_ylim(-2, 2)
+            # if calib is not None:
+            #     # Have calibration
+            #     if calib.loc[cell, 'inactive']:
+            #         disabled = True
+            #         text += ' disabled'
+            #         ax.text(0.1, 0.9, text, transform=ax.transAxes, fontsize=10)
+            #         ax.set_yticks([])
+            #         continue
+            #     else:
+            #         delta = calib.loc[pos_to_cell[cell_pos], 'delta'].astype(float)
+            #         h = h.astype(float)/delta
+            #         ax.set_ylim(-2, 2)
 
             ax.text(0.1, 0.9, text, transform=ax.transAxes, fontsize=10)
             axes[patch, cell] = ax
@@ -222,17 +222,17 @@ def allline_update(frame, sensor, args):
     for patch in range(1, sensor.patches + 1):
         for cell in range(sensor.cells):
             h = sensor.get_history(patch, cell)
-            if calib is not None:
-                # Have calibration
-                if calib.loc[cell, 'inactive']:
-                    continue
-                h = h.astype(float)/calib.loc[cell, 'delta'].astype(float)
-            else:
-                # Not using calibration, autoscale
-                hmin, hmax = h.min(), h.max()
-                if hmin == hmax:
-                    hmin, hmax = -10, 10
-                axes[patch, cell].set_ylim(hmin, hmax)
+            # if calib is not None:
+            #     # Have calibration
+            #     if calib.loc[cell, 'inactive']:
+            #         continue
+            #     h = h.astype(float)/calib.loc[cell, 'delta'].astype(float)
+            # else:
+            # Not using calibration, autoscale
+            hmin, hmax = h.min(), h.max()
+            if hmin == hmax:
+                hmin, hmax = -10, 10
+            axes[patch, cell].set_ylim(hmin, hmax)
             lines[patch, cell].set_ydata(h)
     global total_frames
     total_frames += 1
@@ -367,7 +367,7 @@ def stats_updater(sensor, view, sleep=2):
         print("reader: %.2f KB/s  %.0f cells/s  %.1f Hz   plotter: %.1f fps" % (bytes_rate/1024, records_rate, total_Hz, frame_rate))
 
 def circle_init(sensor, patch):
-    global calib
+    #global calib
     fig = plt.figure(figsize=cmdline.figsize)
     plt.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
     plt.xlim(-0.5, 3.5)
@@ -384,12 +384,15 @@ def circle_init(sensor, patch):
         pos[cell] = (col, -row)
         circles[cell] = plt.Circle(pos[cell], CIRCLE_RADIUS, color='w', zorder=10)
         ax.add_patch(circles[cell])
-        if calib is None or not calib.loc[cell, 'inactive']:
-            plt.text(pos[cell][0], pos[cell][1], str(cell), color='#444444',
-                     fontsize=24, ha='center', va='center', zorder=20)
+        # if calib is None or not calib.loc[cell, 'inactive']:
+        #     plt.text(pos[cell][0], pos[cell][1], str(cell), color='#444444',
+        #              fontsize=24, ha='center', va='center', zorder=20)
 
-    if calib is not None:
-        vmin, vmax = -2, 2
+    # if calib is not None:
+    #     vmin, vmax = -2, 2
+    # el
+    if cmdline.profile is not None:
+        vmin, vmax = -4000, 4000
     else:
         vmin, vmax = cmdline.zmin, cmdline.zmax
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
@@ -405,23 +408,23 @@ def circle_init(sensor, patch):
     ax.set_aspect('equal')
     for spine in ax.spines:
         ax.spines[spine].set_visible(False)
-    if calib is None:
-        plt.colorbar(mapper)
+    # if calib is None:
+    #     plt.colorbar(mapper)
     return fig, (circles, mapper, patch, pos)
 
 def circle_update(frame, sensor, args):
     '''
     Updates the plot for each frame
     '''
-    global calib
+    #global calib
     circles, mapper, patch, pos = args
     for cell in range(sensor.cells):
         avg = sensor.get_expavg(patch, cell)
-        if calib is not None:
-            if calib.loc[cell, 'inactive']:
-                continue
-            else:
-                avg /= calib.loc[cell, 'delta']
+        # if calib is not None:
+        #     if calib.loc[cell, 'inactive']:
+        #         continue
+        #     else:
+        #         avg /= calib.loc[cell, 'delta']
         clr = mapper.to_rgba(avg)
         circles[cell].set_color(clr)
     global total_frames
@@ -446,8 +449,8 @@ def calibrate(sensor, keep=True, show=True):
             
 def main():
     global shutdown
-    global calib
-    calib = None
+    #global calib
+    #calib = None
     sensor = skin.Skin(patches=cmdline.patches, cells=cmdline.cells, device=cmdline.device, history=cmdline.history)
     sensor.set_alpha(cmdline.alpha)
     if cmdline.log:
@@ -459,11 +462,11 @@ def main():
     if not cmdline.nocalibrate:
         calibrate(sensor)
 
-    if cmdline.calib:
-        print("Reading calibration data from", cmdline.calib)
-        calib = pd.read_csv(cmdline.calib, index_col='cell', comment='#')
-        calib['delta'] = abs(calib['max']) - abs(calib['baseline'])
-        calib['inactive'] = (calib['delta'] == 0)
+    # if cmdline.calib:
+    #     print("Reading calibration data from", cmdline.calib)
+    #     calib = pd.read_csv(cmdline.calib, index_col='cell', comment='#')
+    #     calib['delta'] = abs(calib['max']) - abs(calib['baseline'])
+    #     calib['inactive'] = (calib['delta'] == 0)
 
     if cmdline.profile:
         sensor.read_profile(cmdline.profile)

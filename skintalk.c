@@ -434,7 +434,7 @@ skin_get_calibration(skin_t *skin, int patch, int cell) {
 	// Note: patch number from user starts at 1
 	ring_data_t ret;
 	pthread_mutex_lock(&skin->lock);
-	ret = RING_AT(skin, patch - 1, cell).c0;
+	ret = RING_AT(skin, patch - 1, cell).baseline;
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }
