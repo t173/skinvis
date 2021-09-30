@@ -18,6 +18,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
+from mpl_toolkits.mplot3d import axes3d
 from itertools import product, chain
 #from mpl_toolkits.mplot3d import Axes3D
 #from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -34,6 +35,10 @@ placement = np.array([
 
 pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
 cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
+
+position2d = np.mgrid[:placement.shape[0], :placement.shape[1]].reshape(2, -1).T
+cell_to_pos2d = { c: position2d[cell_to_pos[c]] for c in placement.ravel() }
+pos2d_to_cell = { tuple(p): pos_to_cell[i] for i, p in enumerate(position2d) }
 
 LINESTYLE = {
     'color': 'black',
@@ -62,7 +67,7 @@ def parse_cmdline():
     ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
 
     plot = parser.add_argument_group('Plotting and visualization options')
-    plot.add_argument('--style', choices=['line', 'circle'], default='line', help='select plotting style')
+    plot.add_argument('--style', choices=['line', 'circle', 'bar', 'web'], default='line', help='select plotting style')
     plot.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
     plot.add_argument('--threshold', metavar='VALUE', type=int, default=None, help='emphasis activity based on threshold value')
     plot.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=None, help='set figure size in inches')
@@ -430,6 +435,79 @@ def circle_update(frame, sensor, args):
     global total_frames
     total_frames += 1
 
+position2d_x, position2d_y = position2d.T[0], position2d.T[1]
+Zero = np.zeros(len(position2d), dtype=int)
+
+def bar_init(sensor, patch):
+    global bar_bars
+    fig = plt.figure(figsize=cmdline.figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    bar_bars = ax.bar3d(position2d_x, position2d_y, Zero, 1, 1, Zero, color='C0')
+    ax.set_zlim(0, 1e7)
+    return fig, (patch, ax)
+
+def bar_update(frame, sensor, args):
+    global bar_bars
+    patch, ax = args
+    height = [max(0, sensor.get_expavg(patch, cell)) for cell in range(sensor.cells)]
+    bar_bars.remove()
+    bar_bars = ax.bar3d(position2d_x, position2d_y, Zero, 1, 1, height, color='C0')
+
+    global total_frames
+    total_frames += 1
+
+# def avgbar_init(sensor, patch):
+#     global avgbar_bars
+#     avgbar_bars = []
+
+#     fig = plt.figure(figsize=cmdline.figsize)
+#     ax = fig.add_subplot(111, projection='3d')
+#     #avgbar_bars.append( = ax.bar3d(0, 0, 0, 1, 1, 0, color='C0')
+#     ax.set_zlim(0, 1e8)
+#     return fig, ax
+
+# def avgbar_update(frame, sensor, args):
+#     global avgbar_bars
+#     ax = args
+#     breakpoint()
+#     for bar in avgbar_bars:
+#         bar.remove()
+#     avgbar_bars = []
+#     breakpoint()
+#     for patch in range(1, sensor.patches + 2):
+#         values = [sensor.get_expavg(patch, cell) for cell in range(sensor.cells)]
+#         height = abs(sum(values)/len(values))
+#         avgbar_bars.append(ax.bar3d(0, position2d_y, Zero, 1, 1, height, color='C0'))
+
+#     global total_frames
+#     total_frames += 1
+
+def web_init(sensor):
+    fig = plt.figure(figsize=cmdline.figsize)
+    plt.axes(projection='polar')
+    theta = np.zeros((sensor.patches + 1,))
+    theta[:sensor.patches] = np.arange(0, 2*np.pi, 2*np.pi/sensor.patches)
+    lines = plt.plot(theta, np.zeros((sensor.patches + 1,)), 'o-')[0]
+    plt.ylim(0, 1e7)
+    return fig, lines
+
+def web_update(frame, sensor, args):
+    lines = args
+    values = np.zeros((sensor.cells,))
+    patch_avg = []
+    for patch in range(1, sensor.patches + 1):
+        for cell in range(sensor.cells):
+            values[cell] = sensor.get_expavg(patch, cell)
+        patch_avg.append(values.mean())
+
+    # Complete a loop by appending first value
+    patch_avg.append(patch_avg[0])
+
+    lines.set_ydata(patch_avg)
+    
+    global total_frames
+    total_frames += 1
+
 def calibrate(sensor, keep=True, show=True):
     sensor.calibrate_start()
     print('Baseline calibration... DO NOT TOUCH!')
@@ -492,6 +570,15 @@ def main():
             print("Warning: Multiple patches given, using only first patch")
         fig, args = circle_init(sensor, 1)
         anim = animation.FuncAnimation(fig, func=circle_update, fargs=(sensor, args), interval=cmdline.delay)
+    elif cmdline.style == 'bar':
+        fig, args = bar_init(sensor, 1)
+        anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay)
+    # elif cmdline.style == 'avgbar':
+    #     fig, args = avgbar_init(sensor, 1)
+    #     anim = animation.FuncAnimation(fig, func=avgbar_update, fargs=(sensor, args), interval=cmdline.delay)
+    elif cmdline.style == 'web':
+        fig, args = web_init(sensor)
+        anim = animation.FuncAnimation(fig, func=web_update, fargs=(sensor, args), interval=cmdline.delay)
 
     plt.figure(figsize=(1,1))
     ax = plt.axes()
