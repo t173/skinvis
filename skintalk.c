@@ -80,14 +80,15 @@ is_record_start(uint8_t *p) {
 
 inline static int32_t
 convert_24to32(uint8_t *src) {
-	// input is bytes in big-endian: MSB, middle, LSB
+	// input is 24 bits (3 bytes) in big-endian: MSB, middle, LSB
 	int32_t v = src[0];
 	v <<= 8;
 	v |= src[1];
 	v <<= 8;
 	v |= src[2];
 	if ( v & 0x00800000 ) {
-		v |= 0xFF000000;
+		//v |= 0xFF000000;
+		v = -(~v & 0x00FFFFFF);
 	}
 	return v;
 }

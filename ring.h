@@ -10,7 +10,7 @@
 typedef int32_t ring_data_t;
 
 // Calibrated values are scaled by this much
-#define CALIBRATED_SCALE 1000
+#define CALIBRATED_SCALE 100
 
 typedef struct ring {
 	int pos;

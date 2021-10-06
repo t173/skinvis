@@ -49,7 +49,7 @@ struct cmdline cmdline = {
 	.baud = 2000000,
 	.history = 128,
 	.logfile = NULL,
-	.patches = 1,
+	.patches = 8,
 	.cells = 16,
 	.verbose = 0
 };

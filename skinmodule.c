@@ -135,7 +135,6 @@ Skin_get_history(SkinObject *self, PyObject *args) {
 		WARNING("Cannot allocate buffer");
 		return NULL;
 	}
-	//int32_t buf[len];
 	skin_get_history(&self->skin, buf, patch, cell);
 	npy_intp dim[1] = { len };
 	PyArrayObject *array = (PyArrayObject *)PyArray_SimpleNewFromData(1, dim, NPY_INT32, buf);

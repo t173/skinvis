@@ -20,8 +20,8 @@ ring_init(ring_t *ring, int capacity) {
 	ring->alpha = 0.5;
 	ring->baseline = 0;
 	ring->c0 = 0;
-	ring->c1 = 1;
-	ring->c2 = 0;
+	ring->c1 = 1.0/CALIBRATED_SCALE;
+	ring->c2 = 0.0;
 	return 1;
 }
 
@@ -43,18 +43,21 @@ ring_write(ring_t *ring, ring_data_t v) {
 		ring->calib_count++;
 	} else {
 		const ring_data_t cvalue = scale_value(ring, v);
-		ring->buf[ring->pos++] = cvalue;
-		ring->pos %= ring->capacity;
-
 		const double alpha = ring->alpha;
 		ring->expavg = alpha*cvalue + (1 - alpha)*ring->expavg;
+
+		//ring->buf[ring->pos++] = cvalue;
+		ring->buf[ring->pos++] = ring->expavg;
+		ring->pos %= ring->capacity;
 	}
 }
 
 inline void
 ring_get_history(ring_t *ring, ring_data_t *dst) {
-	memcpy(dst, ring->buf + ring->pos, (ring->capacity - ring->pos)*sizeof(*ring->buf));
-	memcpy(dst + ring->capacity - ring->pos, ring->buf, ring->pos*sizeof(*ring->buf));
+	const int from_end = ring->capacity - ring->pos;
+	memcpy(dst, ring->buf + ring->pos, from_end*sizeof(*ring->buf));
+	memcpy(dst + from_end, ring->buf, ring->pos*sizeof(*ring->buf));
+	/* memcpy(dst, ring->buf, ring->capacity*sizeof(*ring->buf)); */
 }
 
 int
