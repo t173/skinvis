@@ -52,7 +52,7 @@ total_frames = 0
 
 def parse_cmdline():
     parser = argparse.ArgumentParser()
-    parser.add_argument('config', choices=['test', 'octocan'], default='test', nargs='?', help='use configuration');
+    parser.add_argument('config', choices=['test', 'octocan'], default='octocan', nargs='?', help='use configuration');
     parser.add_argument('--verbose', '-v', action='store_true', help='print more information')
 
     ser = parser.add_argument_group('Device configuration options')
@@ -60,14 +60,14 @@ def parse_cmdline():
     ser.add_argument('--patches', '-p', type=int, default=1, help='number of sensor patches')
     ser.add_argument('--cells', '-c', type=int, default=16, help='number of cells per patch')
     #ser.add_argument('--baud', '-b', type=int, default=2000000, help='use baud rate')
-    ser.add_argument('--history', '-n', metavar='N', type=int, default=2048, help='store N of the last values read')
+    ser.add_argument('--history', '-n', metavar='N', type=int, default=100, help='store N of the last values read')
     ser.add_argument('--alpha', '-a', type=float, default=0.1, help='set alpha (0..1] for exponential averaging fall off')
     ser.add_argument('--log', '-l', metavar='CSV', type=str, default=None, help='log data to CSV file')
     ser.add_argument('--debug', metavar='FILE', type=str, default=None, help='log debugging information to FILE')
     ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
 
     plot = parser.add_argument_group('Plotting and visualization options')
-    plot.add_argument('--style', choices=['line', 'circle', 'bar', 'web'], default='line', help='select plotting style')
+    plot.add_argument('--style', choices=['line', 'circle', 'bar', 'web', 'text', 'null'], default='line', help='select plotting style')
     plot.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
     plot.add_argument('--threshold', metavar='VALUE', type=int, default=None, help='emphasis activity based on threshold value')
     plot.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=None, help='set figure size in inches')
@@ -79,6 +79,7 @@ def parse_cmdline():
     plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
     #plot.add_argument('--calib', metavar='CSVFILE', help='calibration data from CSVFILE') #old temp calib method for demo
     plot.add_argument('--profile', metavar='CSVFILE', help='dynamic range calibration from CSVFILE')
+    plot.add_argument('--cheap', metavar='CSVFILE', help='write cheap range data to file [text style only]')
 
     cmdline = parser.parse_args()
     if cmdline.config == 'octocan':
@@ -92,6 +93,8 @@ def parse_cmdline():
             cmdline.figsize = (8, 8) if cmdline.only else (15, 9)
         elif cmdline.style == 'circle':
             cmdline.figsize = (8, 6)
+        elif cmdline.style == 'text':
+            cmdline.figsize = (12, 8)
         else:
             cmdline.figsize = (8, 8)
     if cmdline.zrange:
@@ -488,7 +491,11 @@ def web_init(sensor):
     theta = np.zeros((sensor.patches + 1,))
     theta[:sensor.patches] = np.arange(0, 2*np.pi, 2*np.pi/sensor.patches)
     lines = plt.plot(theta, np.zeros((sensor.patches + 1,)), 'o-')[0]
-    plt.ylim(0, 1e7)
+    if cmdline.profile:
+        #plt.ylim(0, 4000)
+        plt.ylim(0, 100000)
+    else:
+        plt.ylim(0, 1e7)
     return fig, lines
 
 def web_update(frame, sensor, args):
@@ -504,7 +511,89 @@ def web_update(frame, sensor, args):
     patch_avg.append(patch_avg[0])
 
     lines.set_ydata(patch_avg)
-    
+
+    if frame % 20 == 0:
+        for patch in range(sensor.patches):
+            print(' %10d' % patch_avg[patch], end='')
+        print()
+
+    global total_frames
+    total_frames += 1
+
+def text_mkstr(df, sensor, patch, cell):
+    addr = (patch, cell)
+    history = sensor.get_history(patch, cell)
+    #current = sensor.get_expavg(patch, cell)
+    vmax = max(df.loc[addr, 'max'], history.max())
+    vmin = min(df.loc[addr, 'min'], history.min())
+    df.loc[addr, 'max'] = vmax
+    df.loc[addr, 'min'] = vmin
+    df.loc[addr, 'batch'] += int(history.mean())
+    df.loc[addr, 'count'] += 1
+    return '%d\n%d\n%d' % (vmax, history[-1], vmin)
+
+def text_init(sensor):
+    if cmdline.config != 'octocan':
+        print('"text" style is for octocan only', file=sys.stderr)
+        sys.exit(1)
+
+    time.sleep(2)
+
+    index_cols = ['patch', 'cell']
+    data_cols=['min', 'max', 'batch', 'count']
+    rows = []
+    for patch in range(1, cmdline.patches + 1):
+        for cell in range(cmdline.cells):
+            current = int(sensor.get_expavg(patch, cell))
+            rows.append([patch, cell, current, current, 0, 0])
+    df = pd.DataFrame(rows, columns=index_cols + data_cols, dtype=int).set_index(index_cols)
+    text = {}
+
+    def make_patch(ax, patch):
+        # Rows and columns of cells for this patch
+        #global df, text
+        nrows, ncols = placement.shape
+        for row, col in np.ndindex(placement.shape):
+            cell = placement[row, col]
+            textstr = text_mkstr(df, sensor, patch, cell)
+            text[patch, cell] = ax.text(col + 1, row, textstr, ha='right', va='bottom', fontsize=8)
+        ax.set_title('Patch %d' % patch)
+        ax.set_ylim(0, ncols)
+        ax.set_xlim(0, nrows)
+        ax.axis('off')
+        # for spine in ax.spines:
+        #     ax.spines[spine].set_visible(False)
+
+    # Rows and columns of patches
+    nrows = 2
+    ncols = 4
+    fig, axs = plt.subplots(nrows, ncols, figsize=cmdline.figsize)
+    for patch in range(cmdline.patches):
+        make_patch(axs[patch//ncols, patch % ncols], patch + 1)  # patch IDs start at 1
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05, wspace=0.05)
+    return fig, (df, text)
+
+def text_update(frame, sensor, args):
+    df, text = args
+    for patch in range(1, cmdline.patches + 1):
+        for row, col in np.ndindex(placement.shape):
+            cell = placement[row, col]
+            text[patch, cell].set_text(text_mkstr(df, sensor, patch, cell))
+    global total_frames
+    total_frames += 1
+
+def null_init(sensor):
+    return plt.figure(figsize=cmdline.figsize), None
+
+threshold = 5000
+def null_update(frame, sensor, args):
+    values = np.zeros((sensor.cells,))
+    for patch in range(1, sensor.patches + 1): # patch IDs start at 1
+        for cell in range(sensor.cells):
+            values[cell] = sensor.get_expavg(patch, cell)
+        m = values[values != 0].mean()
+        print(' %11.0f (%s)' % (m, '1' if m > threshold else '0'), end='')
+    print()
     global total_frames
     total_frames += 1
 
@@ -552,33 +641,49 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
-    if cmdline.style == 'line':
-        # if cmdline.only:
-        #     patch = cmdline.only
-        #     fig, args = line_init(sensor, patch)
-        #     anim = animation.FuncAnimation(fig, func=line_update, fargs=(sensor, patch, args), interval=cmdline.delay)
-        # else:
-        fig, args = allline_init(sensor)
-        anim = animation.FuncAnimation(fig, func=allline_update, fargs=(sensor, args), interval=cmdline.delay)
+    styles = {
+        'line': (allline_init, allline_update),
+        'circle': (circle_init, circle_update),
+        'bar': (bar_init, bar_update),
+        'web': (web_init, web_update),
+        'text': (text_init, text_update),
+        'null': (null_init, null_update),
+    }
+
+    if cmdline.style in styles:
+        fig, args = styles[cmdline.style][0](sensor)
+        anim = animation.FuncAnimation(fig, func=styles[cmdline.style][1], fargs=(sensor, args), interval=cmdline.delay)
+    else:
+        print('Unknown style:', cmdline.style, file=sys.stderr)
+        sys.exit(1)
+
+    # if cmdline.style == 'line':
+    #     # if cmdline.only:
+    #     #     patch = cmdline.only
+    #     #     fig, args = line_init(sensor, patch)
+    #     #     anim = animation.FuncAnimation(fig, func=line_update, fargs=(sensor, patch, args), interval=cmdline.delay)
+    #     # else:
+    #     fig, args = allline_init(sensor)
+    #     anim = animation.FuncAnimation(fig, func=allline_update, fargs=(sensor, args), interval=cmdline.delay)
+    # # elif cmdline.style == 'bar':
+    # #     #fig, args = bar_init(sensor, patch)
+    # #     fig, args = bar_init(sensor)
+    # #     bar_update(0, sensor, args)
+    # #     #anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay);
+    # elif cmdline.style == 'circle':
+    #     if sensor.patches > 1:
+    #         print("Warning: Multiple patches given, using only first patch")
+    #     fig, args = circle_init(sensor, 1)
+    #     anim = animation.FuncAnimation(fig, func=circle_update, fargs=(sensor, args), interval=cmdline.delay)
     # elif cmdline.style == 'bar':
-    #     #fig, args = bar_init(sensor, patch)
-    #     fig, args = bar_init(sensor)
-    #     bar_update(0, sensor, args)
-    #     #anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay);
-    elif cmdline.style == 'circle':
-        if sensor.patches > 1:
-            print("Warning: Multiple patches given, using only first patch")
-        fig, args = circle_init(sensor, 1)
-        anim = animation.FuncAnimation(fig, func=circle_update, fargs=(sensor, args), interval=cmdline.delay)
-    elif cmdline.style == 'bar':
-        fig, args = bar_init(sensor, 1)
-        anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay)
-    # elif cmdline.style == 'avgbar':
-    #     fig, args = avgbar_init(sensor, 1)
-    #     anim = animation.FuncAnimation(fig, func=avgbar_update, fargs=(sensor, args), interval=cmdline.delay)
-    elif cmdline.style == 'web':
-        fig, args = web_init(sensor)
-        anim = animation.FuncAnimation(fig, func=web_update, fargs=(sensor, args), interval=cmdline.delay)
+    #     fig, args = bar_init(sensor, 1)
+    #     anim = animation.FuncAnimation(fig, func=bar_update, fargs=(sensor, args), interval=cmdline.delay)
+    # # elif cmdline.style == 'avgbar':
+    # #     fig, args = avgbar_init(sensor, 1)
+    # #     anim = animation.FuncAnimation(fig, func=avgbar_update, fargs=(sensor, args), interval=cmdline.delay)
+    # elif cmdline.style == 'web':
+    #     fig, args = web_init(sensor)
+    #     anim = animation.FuncAnimation(fig, func=web_update, fargs=(sensor, args), interval=cmdline.delay)
 
     plt.figure(figsize=(1,1))
     ax = plt.axes()
@@ -589,6 +694,11 @@ def main():
 
     shutdown = True
     stats_thread.join()
+
+    if cmdline.style == 'text' and cmdline.cheap:
+        df, _ = args
+        print("Writing", cmdline.cheap)
+        df.to_csv(cmdline.cheap, index=True)
 
 if __name__ == '__main__':
     global cmdline
