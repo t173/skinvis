@@ -7,23 +7,18 @@ import pathlib
 import numpy as np
 
 import skin
-#import rospy
-#from sensor_msgs.msg import Joy
+import rospy
+from sensor_msgs.msg import Joy
 
 # List of devices to try
 devices = ['/dev/ttyUSB0', '/dev/ttyUSB1']
 baud_rate = 2000000
-
 num_patches = 8
 num_cells = 16
-
-threshold = 10
-
-# Exponential smoothing (0,1]. 1=no smoothing
 alpha = 0.1
 
-# Calibration profile to use
 profile = 'demo-profile.csv'
+threshold = 10
 
 # Value range of joints
 joint_range = {
@@ -32,6 +27,13 @@ joint_range = {
     3: (-0.5, 0.5),  # upper_arm_roll
     4: (-0.3, 0.5),  # elbow_pitch
 }
+joint_direction = { j: 1 for j in joint_range.keys() }
+
+joints = np.zeros((max(joint_range.keys()),))
+
+# Increment this much (radians) per ROS poll
+joint_increment = 0.001
+
 
 def status(*args):
     print(*args)
@@ -76,51 +78,50 @@ def setup_octocan():
 total_polls = 0
 values = np.zeros((num_cells,))
 
-def poll_status(sensor):
+def increment_joint(joint):
+    global joints
+    joints[joint] += joint_direction[joint]*joint_increment
+    if (joint_direction[joint] > 0 and joints[joint] >= joint_range[joint][1]) \
+       or (joint_direction[joint] < 0 and joints[joint] <= joint_range[joint][0]):
+        joint_direction = -joint_direction
+
+def poll_octocan(sensor):
+    global total_polls
+    total_polls += 1
+
     for patch in range(1, sensor.patches + 1): # patch IDs start at 1
         for cell in range(sensor.cells):
             values[cell] = sensor.get_expavg(patch, cell)
         m = values[values != 0].mean()
-        print(' %10.0f %s' % (m, 'O' if m > threshold else '.'), end='')
-    print()
+        status(' %10.0f %s' % (m, 'O' if m > threshold else '.'), end='')
+    status()
 
-    global total_polls
-    total_polls += 1
+    increment_joint(1)
 
+def calibrate(sensor):
+    sensor.calibrate_start()
+    status('Baseline calibration... DO NOT TOUCH!')
+    time.sleep(4)
+    sensor.calibrate_stop()
+    status('Baseline calibration finished')
 
 def main():
     octocan = setup_octocan()
     octocan.start()
+    calibrate(octocan)
 
-    while True:
-        time.sleep(0.1)
-        poll_status(octocan)
+    # Set up ROS node
+    rospy.init_node('octocan')
+    rate = rospy.Rate(100)
+    pub = rospy.Publisher('/joy', Joy, queue_size=1)
+    joy = Joy()
 
-    # # Set up ROS node
-    # rospy.init_node('octocan')
-    # rate = rospy.Rate(100)
-    # pub = rospy.Publisher('/joy', Joy, queue_size=1)
-    # joy = Joy()
-
-    # # Publish data to ROS
-    # while not rospy.is_shutdown():
-    #     joy.axes = joints.tolist()
-    #     pub.publish(joy)
-    #     rate.sleep()
-
-
-# joints = np.zeros((5,), dtype=float)
-# def read_state():
-#     global joints
-#     values = np.zeros((sensor.cells,))
-#     for patch in range(1, sensor.patches + 1): # patch IDs start at 1
-#         for cell in range(sensor.cells):
-#             values[cell] = sensor.get_expavg(patch, cell)
-
-    # joints[0] = 
-    # joints[1] = 
-    # joints[3] = 
-    # joints[4] = 
+    # Publish data to ROS
+    while not rospy.is_shutdown():
+        poll_octocan(octocan)
+        joy.axes = joints.tolist()
+        pub.publish(joy)
+        rate.sleep()
 
 if __name__ == '__main__':
     main()
