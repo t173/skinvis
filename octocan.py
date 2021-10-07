@@ -5,6 +5,7 @@ import time
 import subprocess
 import pathlib
 import numpy as np
+from collections import OrderedDict
 
 import skin
 import rospy
@@ -31,6 +32,8 @@ joint_range = {
     4: (-0.3, 0.5),  # elbow_pitch
 }
 joint_direction = { j: 1 for j in joint_range.keys() }
+joint_min = { k: v[0] for k, v in joint_range.items() }
+joint_max = { k: v[1] for k, v in joint_range.items() }
 
 joints = np.zeros((max(joint_range.keys()),))
 
@@ -81,26 +84,61 @@ def setup_octocan():
 total_polls = 0
 values = np.zeros((num_cells,))
 
-def increment_joint(joint):
+def advance_joint(joint):
+    """
+    Advance the joint, reversing direction at each end of its range
+    """
     global joints, joint_direction
     joints[joint] += joint_direction[joint]*joint_increment
-    if (joint_direction[joint] > 0 and joints[joint] >= joint_range[joint][1]) \
-       or (joint_direction[joint] < 0 and joints[joint] <= joint_range[joint][0]):
+    if (joint_direction[joint] > 0 and joints[joint] >= joint_max[joint]) \
+       or (joint_direction[joint] < 0 and joints[joint] <= joint_min[joint]):
         joint_direction[joint] = -joint_direction[joint]
+
+def increment_joint(joint):
+    """
+    Increment the joint in positive direction, stopping at maximum
+    """
+    global joints
+    joints[joint] = min(joints[joint] + joint_increment, joint_max[joint])
+
+def decrement_joint(joint):
+    """
+    Decrement the joint in positive direction, stopping at minimum
+    """
+    global joints
+    joints[joint] = max(joints[joint] - joint_increment, joint_min[joint])
+
+patch_control = OrderedDict({
+    2: lambda: increment_joint(1),
+    6: lambda: decrement_joint(1),
+
+    4: lambda: increment_joint(4),
+    8: lambda: decrement_joint(4),
+})
 
 def poll_octocan(sensor):
     global total_polls
     total_polls += 1
 
-    for patch in range(1, sensor.patches + 1): # patch IDs start at 1
+    for patch in patch_control:
         for cell in range(sensor.cells):
             values[cell] = sensor.get_expavg(patch, cell)
         m = values[values != 0].mean()
-
-        if patch == 2 and m > threshold:
-            increment_joint(1)
-        print(' %10.0f %s' % (m, 'O' if m > threshold else '.'), end='')
+        if m > threshold:
+            patch_control[patch]()
+        print(' %d: %10.0f %s' % (patch, m, 'O' if m > threshold else '.'), end='')
     print()
+            
+
+    # for patch in range(1, sensor.patches + 1): # patch IDs start at 1
+    #     for cell in range(sensor.cells):
+    #         values[cell] = sensor.get_expavg(patch, cell)
+    #     m = values[values != 0].mean()
+
+    #     if patch == 2 and m > threshold:
+    #         increment_joint(1)
+    #     print(' %10.0f %s' % (m, 'O' if m > threshold else '.'), end='')
+    # print()
 
 
 def calibrate(sensor):
@@ -109,6 +147,7 @@ def calibrate(sensor):
     time.sleep(4)
     sensor.calibrate_stop()
     status('Baseline calibration finished')
+
 
 def main():
     octocan = setup_octocan()
