@@ -162,6 +162,30 @@ Skin_get_expavg(SkinObject *self, PyObject *args) {
 }
 
 static PyObject *
+Skin_get_expavg_all(SkinObject *self, PyObject *args) {
+	int patch;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		return NULL;
+	}
+	// Patch numbers start at 1
+	if ( patch <= 0 || patch > self->skin.num_patches ) {
+		PyErr_SetString(PyExc_ValueError, "patch number out of range");
+		return NULL;
+	}
+
+	const int num_cells = self->skin.num_cells;
+	int32_t *buf;
+	ALLOCN(buf, num_cells);
+	for ( int cell=0; cell<num_cells; ++cell ) {
+		buf[cell] = skin_get_expavg(&self->skin, patch, cell);
+	}
+	npy_intp dim[1] = { num_cells };
+	PyArrayObject *array = (PyArrayObject *)PyArray_SimpleNewFromData(1, dim, NPY_INT32, buf);
+	PyArray_ENABLEFLAGS(array, NPY_ARRAY_OWNDATA);
+	return (PyObject *)array;
+}
+
+static PyObject *
 Skin_set_alpha(SkinObject *self, PyObject *args) {
 	DEBUGMSG("Skin_set_alpha()");
 	double alpha;
@@ -256,6 +280,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "stop", (PyCFunction)Skin_stop, METH_NOARGS, "Stops reading from the skin sensor device" },
 	{ "get_history", (PyCFunction)Skin_get_history, METH_VARARGS, "Copies cell history" },
 	{ "get_expavg", (PyCFunction)Skin_get_expavg, METH_VARARGS, "Get exponential average of cell" },
+	{ "get_expavg_all", (PyCFunction)Skin_get_expavg_all, METH_VARARGS, "Get exponential averages for all cells" },
 	{ "set_alpha", (PyCFunction)Skin_set_alpha, METH_VARARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Sets alpha for exponential averaging" },
