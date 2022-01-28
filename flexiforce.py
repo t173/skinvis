@@ -28,14 +28,15 @@ joint_max = { k: v[1] for k, v in joint_range.items() }
 
 joints = np.zeros((max(joint_range.keys()),))
 
-# Increment this much (radians) per ROS poll
-joint_increment = 0.0005
+# Increment maximum this much (radians) per ROS poll
+joint_increment = 0.002
 
 class Flexiforce(threading.Thread):
     def __init__(self):
         self.find_device(DEVICES)
         self.configure_device(BAUD_RATE)
         self.maximum = 1024
+        self.value_ = 0
         super().__init__(daemon=True)
 
     def run(self):
@@ -101,6 +102,7 @@ def decrement_joint(joint, amount):
 
 
 def main():
+    print(sys.version_info)
     flexi = Flexiforce()
 
     # Set up ROS node
@@ -117,6 +119,5 @@ def main():
         rate.sleep()
 
 if __name__ == '__main__':
-    pass
-    #main()
+    main()
 #EOF
