@@ -37,6 +37,14 @@ main(int argc, char *argv[]) {
 	if ( !skin_start(&skin) ) {
 		FATAL("Cannot start skin reader");
 	}
+
+	const int len = skin.history;
+	int32_t *buf;
+	if ( !(buf = malloc(len*sizeof(*buf))) ) {
+		FATAL("Cannot allocate buffer");
+	}
+	skin_get_history(&skin, buf, 4, 8);
+
 	skin_wait(&skin);
 	skin_free(&skin);
 	return EXIT_SUCCESS;

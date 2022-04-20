@@ -30,12 +30,18 @@ devices = ['/dev/ttyUSB0', '/dev/ttyUSB1']
 baud_rate = 2000000  # default, overrideable at cmdline
 
 # Physical arrangement of tactile sensors on the film by number
-placement = np.array([
-    [2, 1,  9, 10],
-    [4, 3, 11, 12],
+# placement = np.array([
+#     [2, 1,  9, 10],
+#     [4, 3, 11, 12],
+#     [6, 5, 13, 14],
+#     [8, 7, 15, 16],
+# ]) - 1
+placement = np.rot90(np.array([
+    [1, 2, 10,  9],
+    [3, 4, 12, 11],
     [6, 5, 13, 14],
     [8, 7, 15, 16],
-]) - 1
+]) - 1)
 
 pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
 cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
@@ -50,6 +56,8 @@ LINESTYLE = {
 }
 
 CIRCLE_RADIUS = 0.45
+DOT_RADIUS = 0.07
+DOT_COLOR = '#444444'
 
 shutdown = False
 total_frames = 0
@@ -65,7 +73,7 @@ def parse_cmdline():
     ser.add_argument('--cells', '-c', type=int, default=16, help='number of cells per patch')
     ser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     ser.add_argument('--history', '-n', metavar='N', type=int, default=100, help='store N of the last values read')
-    ser.add_argument('--alpha', '-a', type=float, default=0.1, help='set alpha (0..1] for exponential averaging fall off')
+    ser.add_argument('--alpha', '-a', type=float, default=0.2, help='set alpha (0..1] for exponential averaging fall off')
     ser.add_argument('--log', '-l', metavar='CSV', type=str, default=None, help='log data to CSV file')
     ser.add_argument('--debug', metavar='FILE', type=str, default=None, help='log debugging information to FILE')
     ser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
@@ -426,6 +434,9 @@ def circle_init(sensor, patch):
     plt.xlim(-0.5, 3.5)
     plt.ylim(-3.5, 0.5)
     plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
+
+    profile = pd.read_csv(cmdline.profile).set_index(['patch', 'cell'])
+
     ax = plt.gca()
     ax.set_facecolor('white')
     cell_rows, cell_cols = placement.shape
@@ -434,8 +445,14 @@ def circle_init(sensor, patch):
     for cell_pos, (row, col) in enumerate(product(range(cell_rows), range(cell_cols))):
         cell = pos_to_cell[cell_pos]
         pos[cell] = (col, -row)
-        circles[cell] = plt.Circle(pos[cell], CIRCLE_RADIUS, color='w', zorder=10)
+        enabled = profile.loc[patch, cell].c1 != 0
+
+        circles[cell] = plt.Circle(pos[cell], CIRCLE_RADIUS, color='white', zorder=10)
         ax.add_patch(circles[cell])
+
+        props = { 'facecolor': DOT_COLOR if enabled else 'w', 'edgecolor': 'w' if enabled else DOT_COLOR }
+        ax.add_patch(plt.Circle(pos[cell], DOT_RADIUS, zorder=20, **props))
+        plt.text(pos[cell][0], pos[cell][1], str(cell), fontsize=8, ha='center', va='center', color='w' if enabled else DOT_COLOR, zorder=30)
 
     if cmdline.profile is not None:
         vmin, vmax = -4000, 4000
@@ -472,7 +489,7 @@ def circle_update(frame, sensor, args):
 position2d_x, position2d_y = position2d.T[0], position2d.T[1]
 Zero = np.zeros(len(position2d), dtype=int)
 
-bar2_height_max = 1000 if cmdline.profile else 100000#1e7
+bar2_height_max = 1000 if cmdline.profile else 10000#1e7
 bar2_separation = 2.5*bar2_height_max
 top_z = np.full(len(position2d), bar2_separation)
 
@@ -707,7 +724,10 @@ def main():
             fig, args = styles[cmdline.style][0](sensor, cmdline.only)
             anim = animation.FuncAnimation(fig, func=styles[cmdline.style][1], fargs=(sensor, args), interval=cmdline.delay)
         else:
-            fig, args = styles[cmdline.style][0](sensor)
+            if cmdline.only:
+                fig, args = styles[cmdline.style][0](sensor, patch=cmdline.only)
+            else:
+                fig, args = styles[cmdline.style][0](sensor)
             anim = animation.FuncAnimation(fig, func=styles[cmdline.style][1], fargs=(sensor, args), interval=cmdline.delay)
     else:
         print('Unknown style:', cmdline.style, file=sys.stderr)

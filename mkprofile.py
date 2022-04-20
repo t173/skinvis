@@ -54,7 +54,7 @@ def plot_sensitivity(df):
     #plt.title("Sensitivity", fontsize=14)
     for cell in range(len(X)):
         #plt.text(X[cell, -1], Y[cell, -1], '  ' + str(cell))
-        plt.annotate(str(cell), (X[cell, -1], Y[cell, -1]), xytext=(5, 0), textcoords='offset points')
+        plt.annotate('  ' + str(cell), (X[cell, -1], Y[cell, -1]), xytext=(5, 0), textcoords='offset points')
     plt.xlabel("Indentation force (N)", fontsize=12)
     plt.ylabel("Change in sensor value", fontsize=12)
 
@@ -92,18 +92,20 @@ def save_fit(df, patch, cell, filebase=None):
     y = np.zeros((num_points,))
     x[1:] = row[activated].values - row[baseline].values
     y[1:] = row[force].values
-
+    
     color = 'C%d' % cell
     X, Y, linear_res = linear_fit(x, y)
+    linear_model = [linear_res.intercept_, linear_res.coef_[0], 0]
     plt.plot(X, Y, '--', label='linear', c=color, zorder=1)
 
     X, Y, quadratic_res = quadratic_fit(x, y)
+    quadratic_model = [quadratic_res.intercept_, quadratic_res.coef_[1], quadratic_res.coef_[0]]
     plt.plot(X, Y, '-', label='quadratic', c=color, zorder=2)
 
     if cmdline.model == 'linear':
-        model = [linear_res.intercept_, linear_res.coef_[0], 0]
+        model = linear_model
     elif cmdline.model == 'quadratic':
-        model = [quadratic_res.intercept_, quadratic_res.coef_[1], quadratic_res.coef_[0]]
+        model = quadratic_model
     else:
         raise ValueError('Unknown model: ' + str(cmdline.type))
 
@@ -115,6 +117,7 @@ def save_fit(df, patch, cell, filebase=None):
         filename = '%s-cell%s.%s' % (filebase, cell, cmdline.fmt)
         print("Saving", filename)
         plt.savefig(filename, fmt=cmdline.fmt, bbox_inches='tight')
+
     return model
 
 plot_sensitivity(df)
@@ -127,6 +130,8 @@ for patch, cell in df.index.values:
     model = save_fit(df, patch, cell, cmdline.fit)
     baseline = df.loc[(patch, cell), 'baseline0'].astype(int)
     rows.append([patch, cell, baseline] + model)
+    # if cell == 4:
+    #     breakpoint()
 profile = pd.DataFrame(rows, columns=['patch', 'cell', 'baseline', 'c0', 'c1', 'c2']).set_index(['patch', 'cell'])
 profile.to_csv(cmdline.output)
         

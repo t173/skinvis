@@ -14,8 +14,10 @@ force_label = "Indentation force (N)"
 press_style = { 'lw': 2, 'c': 'tab:blue', 'label': 'press' }
 hold_style = { 'lw': 3, 'c': 'tab:red', 'label': 'hold' }
 release_style = { 'lw': 2, 'c': 'cadetblue', 'label': 'release' }
-adjacent_style = { 'lw': 1, 'c': '0.2' }
-other_style = { 'lw': 0.5, 'c': '0.7', 'label': 'other' }
+adjacent_style = { 'lw': 1, 'c': '0.2', 'label': 'adjacent tactel' }
+other_style = { 'lw': 0.5, 'c': '0.7', 'label': 'other tactels' }
+raw_style = { 'lw': 5, 'ls': '--', 'c': '0.7', 'label': 'sensed force' }
+ident_other_style = { 'lw': 0.75, 'c': 'k', 'label': other_style['label'] }
 
 def parse_cmdline():
     parser = argparse.ArgumentParser()
@@ -25,9 +27,14 @@ def parse_cmdline():
     parser.add_argument('--digits', type=int, default=3, help='number of digits for resolution')
     parser.add_argument('--verbose', '-v', action='store_true', default=True, help='show more progress')
     parser.add_argument('--shift', '-s', metavar='SECONDS', type=float, help='shift sensor in time by SECONDS')
-    parser.add_argument('--output', '-o', metavar='BASE', help='write output to files with BASE name')
+    parser.add_argument('--output', '-o', help='write calibration data to CSV file')
     parser.add_argument('--fmt', default='pdf', help='save figures as format FMT')
-    return parser.parse_args()
+    parser.add_argument('--paper', action='store_true', help='paper version')
+    parser.add_argument('--profile', help='calibration profile for force conversion')
+    cmdline = parser.parse_args()
+    if cmdline.profile is not None:
+        cmdline.profile = pd.read_csv(cmdline.profile).set_index(['patch', 'cell'])
+    return cmdline
 
 def SI_bytes(x, base=2, space=False):
     if x == 0:
@@ -345,7 +352,7 @@ def get_adjacent_mask(force, cell):
         mask |= force.press == cell_to_press[adjacent_cell]
     return mask
 
-def plot_cell_vs(force, sensor, cell, patch=1):
+def plot_cell_vs(force, sensor, cell, patch=1, F=lambda x: x):
     events = get_press_events(force, cell_to_press[cell])
     start = events['start']
     hold = events['hold']
@@ -358,37 +365,63 @@ def plot_cell_vs(force, sensor, cell, patch=1):
     ax = plt.gca()
     for spine in ax.spines:
         ax.spines[spine].set_visible(False)
-    plt.ylabel("Raw sensor value", fontsize=12)
+
+    if not cmdline.paper:
+        ylabel = "Raw sensor value"
+        plt.ylabel(ylabel, fontsize=12)
     plt.xlabel(force_label, fontsize=12)
-    plt.xlim(min(0, force.force.min()), force.force.max())
+    plt.xlim(min(0, force.force.min()), 1.05*force.force.max())
+
+    force_base = most_freq(force[force.press.isna()].force)
+    f = force
+    f['force'] -= force_base
 
     # This cell pressed
-    plt.plot(force.loc[start:hold, 'force'], sensor.loc[start:hold, (patch, cell)],
+    # plt.plot(force.loc[start:hold, 'force'], sensor.loc[start:hold, (patch, cell)].apply(F),
+    #          '-', zorder=10, **press_style)
+    # plt.plot(force.loc[hold:release, 'force'], sensor.loc[hold:release, (patch, cell)].apply(F),
+    #          '-', zorder=12, **hold_style)
+    # plt.plot(force.loc[release:stop, 'force'], sensor.loc[release:stop, (patch, cell)].apply(F),
+    #          '-', zorder=10, **release_style)
+    plt.plot(f.loc[start:hold, 'force'], sensor.loc[start:hold, (patch, cell)].apply(F),
              '-', zorder=10, **press_style)
-    plt.plot(force.loc[hold:release, 'force'], sensor.loc[hold:release, (patch, cell)],
+    plt.plot(f.loc[hold:release, 'force'], sensor.loc[hold:release, (patch, cell)].apply(F),
              '-', zorder=12, **hold_style)
-    plt.plot(force.loc[release:stop, 'force'], sensor.loc[release:stop, (patch, cell)],
+    plt.plot(f.loc[release:stop, 'force'], sensor.loc[release:stop, (patch, cell)].apply(F),
              '-', zorder=10, **release_style)
 
     # Adjacent cells pressed
-    force_adjacent = force.loc[adjacent, 'force']
+    #force_adjacent = force.loc[adjacent, 'force']
+    force_adjacent = f.loc[adjacent, 'force']
     sensor_adjacent = sensor.loc[sensor.index.isin(force[adjacent].index), (patch, cell)]
-    adj_lbl = 'adjacent cell pressed (' + ', '.join(str(c) for c in sorted(adjacent_to_cell[cell])) + ')'
-    plt.plot(force_adjacent, sensor_adjacent, '-', zorder=5, label=adj_lbl, **adjacent_style)
+    # if cmdline.paper:
+    #     adj_suffix = ''
+    # else:
+    #     adj_suffix = ' (' + ', '.join(str(c) for c in sorted(adjacent_to_cell[cell])) + ')'
+    plt.plot(force_adjacent, sensor_adjacent.apply(F), '-', zorder=5, **adjacent_style)
+
+    ymin, ymax = plt.ylim()
+    xmin, xmax = plt.xlim()
+    plt.ylim(ymin, max(ymax, xmax))
 
     # Other
-    force_other = force.loc[other, 'force']
+    #force_other = force.loc[other, 'force']
+    force_other = f.loc[other, 'force']
     sensor_other = sensor.loc[sensor.index.isin(force[other].index), (patch, cell)]
-    plt.plot(force_other, sensor_other, '-', **other_style)
+    plt.plot(force_other, sensor_other.apply(F), '-', **other_style)
+
+    if cmdline.paper:
+        plt.xticks(fontsize=11)
+        plt.yticks(fontsize=11)
 
     handles, labels = plt.gca().get_legend_handles_labels()
     return events, handles, labels
 
-def plot_cell_press(force, sensor, cell, patch=1, events=None):
+def plot_cell_press(force, sensor, cell, patch=1, events=None, F=lambda x: x):
     ax = plt.gca()
     for spine in ax.spines:
         ax.spines[spine].set_visible(False)
-    plt.xlabel("Time from press", fontsize=12)
+    plt.xlabel("Time from press", fontsize=14)
     #plt.ylabel("Sensor value", fontsize=12)
 
     fmtr = FuncFormatter(lambda x, pos: '%gs' % (x*1e-9))
@@ -423,28 +456,88 @@ def plot_cell_press(force, sensor, cell, patch=1, events=None):
     s_press = s.loc[start - start:hold - start]
     s_hold = s.loc[hold - start:release - start]
     s_release = s.loc[release - start:stop - start]
+    #s_all = s.loc[:]
 
-    plt.plot(s_press, zorder=10, **press_style)
-    plt.plot(s_hold, zorder=20, **hold_style)
-    plt.plot(s_release, zorder=10, **release_style)
+    force_base = most_freq(force[force.press.isna()].force)
+    f = force.loc[end_of_prev:start_of_next, 'force']
+    f -= force_base
+    f.index -= start
+    f_press = f.loc[start - start:hold - start]
+    f_hold = f.loc[hold - start:release - start]
+    f_release = f.loc[release - start:stop - start]
 
-    plt.plot(s.loc[:start - start], zorder=1, **other_style)
-    plt.plot(s.loc[stop - start:], zorder=1, **other_style)
+    if cmdline.paper:
+        plt.plot(f_press, zorder=10, **press_style)
+        plt.plot(f_hold, zorder=20, **hold_style)
+        plt.plot(f_release, zorder=10, **release_style)
+        plt.plot(s.loc[f.index].apply(F), zorder=1, **raw_style)
+
+        plt.plot(f.loc[:start - start], zorder=10, **ident_other_style)
+        plt.plot(f.loc[stop - start:], zorder=10, **ident_other_style)
+
+        #plt.plot(s.loc[stop - start:].apply(F), zorder=1, **other_style)
+        plt.xticks(fontsize=11)
+        plt.yticks(fontsize=11)
+        plt.ylabel('Force (N)', fontsize=14)
+    else:
+        plt.plot(s_press.apply(F), zorder=10, **press_style)
+        plt.plot(s_hold.apply(F), zorder=20, **hold_style)
+        plt.plot(s_release.apply(F), zorder=10, **release_style)
+
+        plt.plot(s.loc[:start - start].apply(F), zorder=1, **other_style)
+        plt.plot(s.loc[stop - start:].apply(F), zorder=1, **other_style)
 
     handles, labels = plt.gca().get_legend_handles_labels()
     return events, handles, labels
 
 def plot_cell(cell, patch=1):
     global force, sensor
-    fig = plt.figure(figsize=(9, 3))
-    left = plt.subplot(1, 2, 1)
-    events, handles, labels = plot_cell_vs(force, sensor, cell, patch)
-    right = plt.subplot(1, 2, 2, sharey=left)
-    plot_cell_press(force, sensor, cell, patch, events=events)
-    
-    plt.suptitle("Cell %d" % cell, fontsize=14)
-    plt.subplots_adjust(left=0.13, right=0.95, top=0.90, bottom=0.3, wspace=0.3)
-    plt.figlegend(handles=handles, labels=labels, loc='lower center', ncol=5, frameon=False)
+    if cmdline.paper:
+        figsize = (7.5, 3)
+        #figsize = (3.5, 1.2)
+    else:
+        figsize = (9, 3)
+    fig = plt.figure(figsize=figsize)
+    vsplot = plt.subplot(1, 2, 2)
+    if cmdline.paper and cmdline.profile is not None:
+        b, c0, c1 = cmdline.profile.loc[(patch, cell), ['baseline', 'c0', 'c1']]
+        #c1 = v.force/(v.activated - v.baseline)
+        #F = lambda x: c1*(x - v.baseline)
+        F = lambda x: c0 + c1*(x - b)
+    else:
+        F = lambda x: x
+
+    events, vs_handles, vs_labels = plot_cell_vs(force, sensor, cell, patch, F=F)
+    vs_leg = { vs_labels[i]: vs_handles[i] for i in range(len(vs_labels)) } 
+
+    pressplot = plt.subplot(1, 2, 1, sharey=vsplot)
+    _, press_handles, press_labels = plot_cell_press(force, sensor, cell, patch, events=events, F=F)
+    press_leg = { press_labels[i]: press_handles[i] for i in range(len(press_labels)) } 
+
+    legend = press_leg
+    # for lbl, handle in press_leg.items():
+    #     if lbl not in legend:
+    #         legend[lbl] = handle
+    if cmdline.paper:
+        target = adjacent_style['label']
+        try:
+            index = vs_labels.index(target)
+            legend[target] = vs_handles[index]
+        except ValueError:
+            pass
+    labels = list(legend.keys())
+    handles = [ legend[lbl] for lbl in labels ]
+
+    if not cmdline.paper:
+        #plt.suptitle(("Tactel #" if cmdline.paper else "Cell ") + ("%d" % cell), fontsize=14)
+        plt.suptitle("Cell %d" % cell, fontsize=14)
+    if cmdline.paper:
+        plt.subplots_adjust(left=0.10, right=0.99, top=0.99, bottom=0.4, wspace=0.2)
+    else:
+        plt.subplots_adjust(left=0.13, right=0.95, top=0.90, bottom=0.3, wspace=0.3)
+    ncol = 3 if cmdline.paper else len(labels)
+    #ncol = len(labels)
+    plt.figlegend(handles=handles, labels=labels, loc='lower center', ncol=ncol, frameon=False, fontsize=12)
 
 cmdline = parse_cmdline()
 force_orig = read_force(cmdline.force)
@@ -472,9 +565,15 @@ sensor = smooth(sensor_resampled).round().astype(int)
 
 force['press'] = detect_presses(force, cmdline.threshold)
 
+# placement = np.array([
+#     [2, 1,  9, 10],
+#     [4, 3, 11, 12],
+#     [6, 5, 13, 14],
+#     [8, 7, 15, 16],
+# ]) - 1
 placement = np.array([
-    [2, 1,  9, 10],
-    [4, 3, 11, 12],
+    [1, 2,  10, 9],
+    [3, 4, 12, 11],
     [6, 5, 13, 14],
     [8, 7, 15, 16],
 ]) - 1
@@ -618,7 +717,10 @@ def plot_dist(X, color='tab:blue', xlabel=None, ylabel='Value'):
     return fq
     
 
-def calibrate(force, sensor, patch=1):
+def calibrate(force, sensor, patch=1, cell=None):
+    if cell is not None:
+        if not callable(getattr(cell, '__contains__', None)):
+            cell = [cell]
     presses = get_press_times(force)
     not_pressed = force[force.press.isna()].index
     idle_sensor = sensor.loc[sensor.index.isin(not_pressed), :]
@@ -628,8 +730,10 @@ def calibrate(force, sensor, patch=1):
         status("Baseline force", force_base, "N")
     data = []
     for p in presses.index:
-        cell = press_to_cell[p]
-        addr = (patch, cell)
+        c = press_to_cell[p]
+        if cell is not None and c not in cell:
+            continue
+        addr = (patch, c)
 
         events = get_press_events(force, p)
 
@@ -642,7 +746,12 @@ def calibrate(force, sensor, patch=1):
         force_active = force_extents.loc[p, 'extent']
         force_applied = force_active - force_base
 
-        data.append([patch, cell, baseline, activated, force_applied])
+        data.append([patch, c, baseline, activated, force_applied])
     data = sorted(data)
     df = pd.DataFrame(data, columns=['patch', 'cell', 'baseline', 'activated', 'force']).set_index(['patch', 'cell'])
     return df
+
+if cmdline.output:
+    df = calibrate(force, sensor)
+    print("Writing", cmdline.output, file=sys.stderr)
+    df.to_csv(cmdline.output)

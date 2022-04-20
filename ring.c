@@ -81,7 +81,7 @@ void
 ring_calibrate_stop(ring_t *ring) {
 	ring->calibrating = 0;
 	if ( ring->calib_count == 0 ) {
-		WARNING("No calibration values recorded");
+		//WARNING("No calibration values recorded");
 		ring->baseline = 0;
 	} else {
 		ring->baseline = ring->calib_batch/ring->calib_count;
