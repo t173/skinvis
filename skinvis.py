@@ -36,6 +36,8 @@ baud_rate = 2000000  # default, overrideable at cmdline
 #     [6, 5, 13, 14],
 #     [8, 7, 15, 16],
 # ]) - 1
+
+# Rotate 90 because patches are mounted sideways on octocan
 placement = np.rot90(np.array([
     [1, 2, 10,  9],
     [3, 4, 12, 11],
@@ -58,6 +60,14 @@ LINESTYLE = {
 CIRCLE_RADIUS = 0.45
 DOT_RADIUS = 0.07
 DOT_COLOR = '#444444'
+
+FOCUS_RADIUS = 0.5
+FOCUS_PROPS = {
+    'edgecolor': 'cadetblue',
+    'facecolor': None,
+    'lw': 3,
+    'alpha': 0.5,
+}
 
 shutdown = False
 total_frames = 0
@@ -87,9 +97,9 @@ def parse_cmdline():
     plot.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=None, help='set figure size in inches')
     #plot.add_argument('--dup', type=int, help='mimic multiple patches by duplicating first patch DUP times')
     plot.add_argument('--only', metavar='PATCH', type=int, default=None, help='plot only patch out of many')
-    plot.add_argument('--zmin', type=float, help='set minimum z-axis for 3D plots')#, default=-75000)
-    plot.add_argument('--zmax', type=float, help='set maximum z-axis for 3D plots')#, default=75000)
-    plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=1e6, help='set z-axis range to [-Z, +Z]')
+    plot.add_argument('--zmin', type=float, help='set minimum z-axis for 3D plots', default=-4000)#, default=-75000)
+    plot.add_argument('--zmax', type=float, help='set maximum z-axis for 3D plots', default=4000)#, default=75000)
+    plot.add_argument('--zrange', '-z', metavar='Z', type=float, default=None, help='set z-axis range to [-Z, +Z]')
     plot.add_argument('--yauto', action='store_true', help='autoscale y-axis')
     #plot.add_argument('--calib', metavar='CSVFILE', help='calibration data from CSVFILE') #old temp calib method for demo
     plot.add_argument('--profile', metavar='CSVFILE', help='dynamic range calibration from CSVFILE')
@@ -424,8 +434,12 @@ def stats_updater(sensor, view, sleep=2):
         frames_before = frames_now
         before = now
 
-        print("reader: %.2f KB/s  %.0f cells/s  %.1f Hz   plotter: %.1f fps" % (bytes_rate/1024, records_rate, total_Hz, frame_rate))
+        #print("reader: %.2f KB/s  %.0f cells/s  %.1f Hz   plotter: %.1f fps" % (bytes_rate/1024, records_rate, total_Hz, frame_rate))
 
+
+circle_active = np.zeros_like(placement.flatten(), dtype=bool)
+circle_value = np.zeros_like(placement.flatten(), dtype=float)
+circle_pos = np.zeros_like(position2d, dtype=float)
 
 def circle_init(sensor, patch):
     #global calib
@@ -435,7 +449,8 @@ def circle_init(sensor, patch):
     plt.ylim(-3.5, 0.5)
     plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
 
-    profile = pd.read_csv(cmdline.profile).set_index(['patch', 'cell'])
+    if cmdline.profile:
+        profile = pd.read_csv(cmdline.profile).set_index(['patch', 'cell'])
 
     ax = plt.gca()
     ax.set_facecolor('white')
@@ -445,7 +460,9 @@ def circle_init(sensor, patch):
     for cell_pos, (row, col) in enumerate(product(range(cell_rows), range(cell_cols))):
         cell = pos_to_cell[cell_pos]
         pos[cell] = (col, -row)
-        enabled = profile.loc[patch, cell].c1 != 0
+        circle_pos[cell] = pos[cell]
+        enabled = profile.loc[patch, cell].c1 != 0 if cmdline.profile else True
+        circle_active[cell] = enabled
 
         circles[cell] = plt.Circle(pos[cell], CIRCLE_RADIUS, color='white', zorder=10)
         ax.add_patch(circles[cell])
@@ -454,10 +471,10 @@ def circle_init(sensor, patch):
         ax.add_patch(plt.Circle(pos[cell], DOT_RADIUS, zorder=20, **props))
         plt.text(pos[cell][0], pos[cell][1], str(cell), fontsize=8, ha='center', va='center', color='w' if enabled else DOT_COLOR, zorder=30)
 
-    if cmdline.profile is not None:
-        vmin, vmax = -4000, 4000
-    else:
-        vmin, vmax = cmdline.zmin, cmdline.zmax
+    # if cmdline.profile is not None:
+    #     vmin, vmax = -4000, 4000
+    # else:
+    vmin, vmax = cmdline.zmin, cmdline.zmax
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
     cmap = mpl.colors.LinearSegmentedColormap.from_list("cardinal", [
         [0.00, 'black'],
@@ -471,18 +488,41 @@ def circle_init(sensor, patch):
     ax.set_aspect('equal')
     for spine in ax.spines:
         ax.spines[spine].set_visible(False)
-    return fig, (circles, mapper, patch, pos)
 
+    pos_center = np.array(list(pos.values())).mean(axis=0)
+    return fig, (circles, mapper, patch, pos, ax, pos_center, 0)
+
+circle_focus = None
+circle_max = np.full_like(placement.flatten(), cmdline.zmax, dtype=float)
+focus_alpha = 0.5
 
 def circle_update(frame, sensor, args):
     '''
     Updates the plot for each frame
     '''
-    circles, mapper, patch, pos = args
+    global circle_max, circle_focus
+    circles, mapper, patch, pos, ax, last_pos, last_magnitude = args
     for cell in range(sensor.cells):
-        avg = sensor.get_expavg(patch, cell)
+        avg = abs(sensor.get_expavg(patch, cell))
         clr = mapper.to_rgba(avg)
+        circle_max[cell] = max(avg, circle_max[cell])
+        circle_value[cell] = min(avg, circle_max[cell])
         circles[cell].set_color(clr)
+
+    focus_magnitude = ((circle_value/circle_max)[circle_active]).sum()
+    field = ((circle_value/circle_max)[circle_active]/focus_magnitude)
+    focus_pos = field.dot(circle_pos[circle_active])
+    focus_pos = focus_alpha*focus_pos + (1 - focus_alpha)*last_pos
+
+    focus_magnitude = focus_alpha*focus_magnitude + (1 - focus_alpha)*last_magnitude
+    
+    print(focus_pos, focus_magnitude)
+
+    if circle_focus:
+        circle_focus.remove()
+    circle_focus = plt.Circle(focus_pos, FOCUS_RADIUS*focus_magnitude, zorder=100, **FOCUS_PROPS)
+    ax.add_patch(circle_focus)
+
     global total_frames
     total_frames += 1
 
@@ -773,7 +813,8 @@ def main():
 
     plt.figure(figsize=(1,1))
     ax = plt.axes()
-    button = mpl.widgets.Button(ax, 'Baseline')
+    button = mpl.widgets.Button(ax, 'Tare')
+    button.label.set_fontsize(24)
     button.on_clicked(lambda _: calibrate_button(sensor))
 
     plt.show()
