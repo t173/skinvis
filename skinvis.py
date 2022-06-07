@@ -49,8 +49,6 @@ pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
 cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
 
 position2d = np.mgrid[:placement.shape[0], :placement.shape[1]].reshape(2, -1).T
-cell_to_pos2d = { c: position2d[cell_to_pos[c]] for c in placement.ravel() }
-pos2d_to_cell = { tuple(p): pos_to_cell[i] for i, p in enumerate(position2d) }
 
 LINESTYLE = {
     'color': 'black',
@@ -62,6 +60,7 @@ DOT_RADIUS = 0.07
 DOT_COLOR = '#444444'
 
 FOCUS_RADIUS = 0.5
+FOCUS_RADIUS_MIN = 0.01
 FOCUS_PROPS = {
     'edgecolor': 'cadetblue',
     'facecolor': None,
@@ -445,8 +444,8 @@ def circle_init(sensor, patch):
     #global calib
     fig = plt.figure(figsize=cmdline.figsize)
     plt.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
-    plt.xlim(-0.5, 3.5)
-    plt.ylim(-3.5, 0.5)
+    # plt.xlim(-0.5, 3.5)
+    # plt.ylim(-3.5, 0.5)
     plt.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False, labelbottom=False, labelleft=False)
 
     if cmdline.profile:
@@ -455,11 +454,19 @@ def circle_init(sensor, patch):
     ax = plt.gca()
     ax.set_facecolor('white')
     cell_rows, cell_cols = placement.shape
+
+    width = cell_cols - 1
+    height = cell_rows - 1
+    margin = 0.5
+    
+    plt.xlim(-width/2 - margin, width/2 + margin)
+    plt.ylim(-height/2 - margin, height/2 + margin)
+
     circles = {}
     pos = {}
     for cell_pos, (row, col) in enumerate(product(range(cell_rows), range(cell_cols))):
         cell = pos_to_cell[cell_pos]
-        pos[cell] = (col, -row)
+        pos[cell] = (-width/2 + col, height/2 - row)
         circle_pos[cell] = pos[cell]
         enabled = profile.loc[patch, cell].c1 != 0 if cmdline.profile else True
         circle_active[cell] = enabled
@@ -490,24 +497,46 @@ def circle_init(sensor, patch):
         ax.spines[spine].set_visible(False)
 
     pos_center = np.array(list(pos.values())).mean(axis=0)
-    return fig, (circles, mapper, patch, pos, ax, pos_center, 0)
+    active_pos = circle_pos[circle_active]
+    return fig, (circles, mapper, patch, pos, ax, pos_center, 0, active_pos)
 
 circle_focus = None
 circle_max = np.full_like(placement.flatten(), cmdline.zmax, dtype=float)
 focus_alpha = 0.5
+
+deadspace = 0
 
 def circle_update(frame, sensor, args):
     '''
     Updates the plot for each frame
     '''
     global circle_max, circle_focus
-    circles, mapper, patch, pos, ax, last_pos, last_magnitude = args
+    circles, mapper, patch, pos, ax, last_pos, last_magnitude, active_pos = args
     for cell in range(sensor.cells):
         avg = abs(sensor.get_expavg(patch, cell))
         clr = mapper.to_rgba(avg)
-        circle_max[cell] = max(avg, circle_max[cell])
-        circle_value[cell] = min(avg, circle_max[cell])
         circles[cell].set_color(clr)
+
+        # mx = circle_max[cell] = max(avg, circle_max[cell])
+        # threshold = deadspace*mx
+        # if avg < threshold:
+        #     v = 0
+        # else:
+        #     v = (avg - threshold)/(mx - threshold)
+        # circle_value[cell] = min(v, circle_max[cell])  #clip to max
+
+        circle_value[cell] = min(avg, circle_max[cell])  #clip to max
+
+    # P = circle_value[circle_active]
+    # P = P**2
+    # focus_magnitude = P.sum()
+    # if focus_magnitude == 0:
+    #     focus_pos = circle_pos.mean(axis=0)
+    # else:
+    #     focus_pos = (P/focus_magnitude).dot(active_pos)
+    # focus_pos = focus_alpha*focus_pos + (1 - focus_alpha)*last_pos
+
+    # focus_magnitude = focus_alpha*focus_magnitude + (1 - focus_alpha)*last_magnitude
 
     focus_magnitude = ((circle_value/circle_max)[circle_active]).sum()
     field = ((circle_value/circle_max)[circle_active]/focus_magnitude)
@@ -520,7 +549,8 @@ def circle_update(frame, sensor, args):
 
     if circle_focus:
         circle_focus.remove()
-    circle_focus = plt.Circle(focus_pos, FOCUS_RADIUS*focus_magnitude, zorder=100, **FOCUS_PROPS)
+    focus_pos *= 2*np.sqrt(2)
+    circle_focus = plt.Circle(focus_pos, max(FOCUS_RADIUS_MIN, FOCUS_RADIUS*focus_magnitude), zorder=100, **FOCUS_PROPS)
     ax.add_patch(circle_focus)
 
     global total_frames
