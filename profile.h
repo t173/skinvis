@@ -12,10 +12,10 @@
 #define PROFILE_CELLS       16
 #define PROFILE_COEFS       3
 
-typedef struct profile {
+struct profile {
 	const char *csvfile;
 	struct patch_profile *patch[PROFILE_MAXPATCHES];
-} profile_t;
+};
 
 struct patch_profile {
 	int id;  // patch ID
@@ -26,10 +26,10 @@ struct patch_profile {
 };
 
 // Reads calibration profile from CSV file into p
-int profile_read(profile_t *p, const char *csvfile);
+int profile_read(struct profile *p, const char *csvfile);
 
 // Calibration profile
-void profile_init(profile_t *p);
-void profile_free(profile_t *p);
+void profile_init(struct profile *p);
+void profile_free(struct profile *p);
 
 #endif // PROFILE_H_

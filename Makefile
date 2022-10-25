@@ -1,6 +1,6 @@
 
-SRCS = main.c profile.c skintalk.c ring.c cmdline.c
-DEPS = profile.h skintalk.h util.h ring.h cmdline.h
+SRCS = main.c profile.c skintalk.c cmdline.c
+DEPS = profile.h skintalk.h util.h cmdline.h
 TARG = skintalk
 
 OBJS = $(SRCS:.c=.o)

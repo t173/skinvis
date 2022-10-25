@@ -15,25 +15,29 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sys/select.h>
-//#include <termios.h>
 #include <sys/time.h>
 #include <time.h>
-//#include <arpa/inet.h>
 
 #include "util.h"
 #include "skintalk.h"
 #include "profile.h"
-#include "ring.h"
 
-#define START_CODE  '1'
-#define STOP_CODE   '0'
+#define START1_CODE '1'  // start with original protocol
+#define START2_CODE '2'  // start, but including sequence numbers
+
+#define START_CODE START2_CODE
+#define STOP_CODE   '0'  // stop octocan
 
 // Size of read buffer
 //#define BUFFER_SIZE 4096
 #define BUFFER_SIZE 128
 
 // Size of a cell record in bytes
+#if START_CODE == START2_CODE
+#define RECORD_SIZE 9
+#else
 #define RECORD_SIZE 5
+#endif
 
 // Magic number at start of each record
 #define RECORD_START 0x55
@@ -46,11 +50,11 @@
   } } while (0)
 
 // A single measurement of a sensor cell
-typedef struct record {
+struct record {
 	short patch;
 	short cell;
 	int32_t value;
-} record_t;
+};
 
 static void
 transmit_char(int fd, char code) {

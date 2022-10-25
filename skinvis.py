@@ -756,7 +756,7 @@ def calibrate(sensor, keep=True, show=True):
                 rows.append([patch, cell, sensor.get_calib(patch, cell)])
         baseline = pd.DataFrame(rows, columns=['patch', 'cell', 'calibration'])
         if show:
-            print(baseline)
+            print(baseline.values)
     return baseline
             
 def main():

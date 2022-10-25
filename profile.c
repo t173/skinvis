@@ -40,7 +40,7 @@ static inline struct patch_profile *profile_patch_new(int id) {
 	return p;
 }
 
-int profile_read(profile_t *p, const char *csvfile) {
+int profile_read(struct profile *p, const char *csvfile) {
 	FILE *f;
 	char *line = NULL;
 	size_t len = 0;
@@ -126,12 +126,12 @@ int profile_read(profile_t *p, const char *csvfile) {
 	return patches_found;
 }
 
-void profile_init(profile_t *p) {
+void profile_init(struct profile *p) {
 	p->csvfile = NULL;
 	memset(p->patch, 0, sizeof(p->patch));
 }
 
-void profile_free(profile_t *p) {
+void profile_free(struct profile *p) {
 	for ( int n=0; n < PROFILE_MAXPATCHES; n++ )
 		free(p->patch[n]);
 }
