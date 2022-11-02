@@ -134,12 +134,26 @@ profile_read(struct profile *p, const char *csvfile)
 	return patches_found;
 }
 
-void profile_init(struct profile *p) {
+void
+profile_tare(struct profile *p)
+{
+	for ( int i=0; i<PROFILE_MAXPATCHES; i++ ) {
+		if ( p->patch[i] ) {
+			memset(p->patch[i]->baseline, 0, sizeof(*p->patch[i]->baseline));
+		}
+	}
+}
+
+void
+profile_init(struct profile *p)
+{
 	p->csvfile = NULL;
 	memset(p->patch, 0, sizeof(p->patch));
 }
 
-void profile_free(struct profile *p) {
+void
+profile_free(struct profile *p)
+{
 	for ( int n=0; n < PROFILE_MAXPATCHES; n++ )
 		free(p->patch[n]);
 }

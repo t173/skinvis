@@ -14,20 +14,20 @@
 
 typedef struct {
 	PyObject_HEAD
-	skin_t skin;
+	struct skin skin;
 } SkinObject;
 
-skin_t skin_default = {
+struct skin skin_default = {
 	.num_patches = 1,
 	.num_cells = 16,
-	.device = "/dev/ttyUSB0",
+	.device = "/dev/ttyUSB0"
 };
 
 static struct PyModuleDef skin_module = {
 	PyModuleDef_HEAD_INIT,
-	.m_name="skin",
-	.m_doc="Skin sensor prototype interface module",
-	.m_size=-1,
+	.m_name = "skin",
+	.m_doc = "Skin sensor prototype interface module",
+	.m_size = -1
 };
 
 //--------------------------------------------------------------------
@@ -60,7 +60,7 @@ Skin_init(SkinObject *self, PyObject *args, PyObject *kw) {
 		"cells",
 		NULL
 	};
-	skin_t stage = skin_default;
+	struct skin stage = skin_default;
 	if ( !PyArg_ParseTupleAndKeywords(args, kw, "|sii", kwlist, &stage.device, &stage.num_patches, &stage.num_cells) ) {
 		return -1;
 	}
@@ -97,49 +97,6 @@ Skin_stop(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	}
 	Py_INCREF(Py_None);
 	return Py_None;
-}
-
-static PyObject *
-Skin_get_expavg(SkinObject *self, PyObject *args) {
-	int patch, cell;
-	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) {
-		return NULL;
-	}
-	// Patch numbers start at 1
-	if ( patch <= 0 || patch > self->skin.num_patches ) {
-		PyErr_SetString(PyExc_ValueError, "patch number out of range");
-		return NULL;
-	}
-	// Cell numbers start at 0
-	if ( cell < 0 || cell >= self->skin.num_cells ) {
-		PyErr_SetString(PyExc_ValueError, "cell number out of range");
-		return NULL;
-	}
-	return PyFloat_FromDouble(skin_get_expavg(&self->skin, patch, cell));
-}
-
-static PyObject *
-Skin_get_expavg_all(SkinObject *self, PyObject *args) {
-	int patch;
-	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
-		return NULL;
-	}
-	// Patch numbers start at 1
-	if ( patch <= 0 || patch > self->skin.num_patches ) {
-		PyErr_SetString(PyExc_ValueError, "patch number out of range");
-		return NULL;
-	}
-
-	const int num_cells = self->skin.num_cells;
-	int32_t *buf;
-	ALLOCN(buf, num_cells);
-	for ( int cell=0; cell<num_cells; ++cell ) {
-		buf[cell] = skin_get_expavg(&self->skin, patch, cell);
-	}
-	npy_intp dim[1] = { num_cells };
-	PyArrayObject *array = (PyArrayObject *)PyArray_SimpleNewFromData(1, dim, NPY_INT32, buf);
-	PyArray_ENABLEFLAGS(array, NPY_ARRAY_OWNDATA);
-	return (PyObject *)array;
 }
 
 static PyObject *
@@ -235,9 +192,6 @@ static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
 	{ "stop", (PyCFunction)Skin_stop, METH_NOARGS, "Stops reading from the skin sensor device" },
-	{ "get_history", (PyCFunction)Skin_get_history, METH_VARARGS, "Copies cell history" },
-	{ "get_expavg", (PyCFunction)Skin_get_expavg, METH_VARARGS, "Get exponential average of cell" },
-	{ "get_expavg_all", (PyCFunction)Skin_get_expavg_all, METH_VARARGS, "Get exponential averages for all cells" },
 	{ "set_alpha", (PyCFunction)Skin_set_alpha, METH_VARARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Sets alpha for exponential averaging" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Sets alpha for exponential averaging" },

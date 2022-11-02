@@ -18,18 +18,20 @@ struct skin {
 	int num_cells;           // number of tactile sensors per patch
 	cell_t *value;           // array of cell values
 
+	struct profile profile;  // dynamic range calibration profile
+
 	double alpha;            // alpha value for exponential averaging
 	const char *device;      // communication device to use
 	const char *log;         // log record stream to filename
 	const char *debuglog;    // log debugging data to filename
 
 	// Reader thread management
-	pthread_t reader;
-	pthread_mutex_t lock;
+	pthread_t reader;        // serial reader and processing thread
+	pthread_mutex_t lock;    // mutex lock to protect against reader
 	int shutdown;            // whether trying to shutdown device
-	int calibrating;         // whether currently baseline calibrating
-
-	struct profile profile;  // dynamic range calibration profile
+	int calibrating;         // whether performing baseline calibration
+	long long *calib_sum;    // batch sum while calibrating
+	int *calib_count;        // batch count while calibrating
 
 	// Performance statistics
 	long long total_bytes;   // odometer of bytes read from device
