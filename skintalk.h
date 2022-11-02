@@ -6,40 +6,40 @@
 #define SKINTALK_H_
 
 #include <pthread.h>
-#include <stding.h>
-//#include "ring.h"
+#include <stdint.h>
 #include "profile.h"
 
 // Value of a single skin cell
-typedef int32_t skincell_t;
+typedef int32_t cell_t;
 
 // Management of a skin sensor device
 struct skin {
-	int num_patches;       // number of sensor patches
-	int num_cells;         // number of tactile sensors per patch
-	skincell_t *cell;      // array of cell values
-	double alpha;          // alpha value for exponential averaging
-	
-	const char *device;    // communication device to use
-//	ring_t *rings;         // ring buffers storing sensor values 
-//	int history;           // size of ring buffers
-	const char *log;       // log record stream to filename
-	const char *debuglog;  // log debugging data to filename
+	int num_patches;         // number of sensor patches
+	int num_cells;           // number of tactile sensors per patch
+	cell_t *value;           // array of cell values
+
+	double alpha;            // alpha value for exponential averaging
+	const char *device;      // communication device to use
+	const char *log;         // log record stream to filename
+	const char *debuglog;    // log debugging data to filename
 
 	// Reader thread management
 	pthread_t reader;
 	pthread_mutex_t lock;
-	int shutdown;
-	int calibrating;       // whether currently baseline calibrating
+	int shutdown;            // whether trying to shutdown device
+	int calibrating;         // whether currently baseline calibrating
 
-	struct profile profile;     // dynamic range calibration profile
+	struct profile profile;  // dynamic range calibration profile
 
 	// Performance statistics
 	long long total_bytes;   // odometer of bytes read from device
-	long long total_records; // number of records accepted
+	long long total_records; // number of records correctly parsed
 };
 
-int skin_init(struct skin *skin, int patches, int cells, const char *device, int history);
+// Get value of cell c from patch p of struct skin *s
+#define skin_cell(s, p, c) ((s)->value[(p)*((s)->num_cells) + (c)])
+
+int skin_init(struct skin *skin, int patches, int cells, const char *device);
 void skin_free(struct skin *skin);
 int skin_start(struct skin *skin);
 void skin_wait(struct skin *skin);
@@ -52,16 +52,15 @@ void skin_log_stream(struct skin *skin, const char *filename);
 // Log debugging information to file
 void skin_debuglog_stream(struct skin *skin, const char *filename);
 
-//void skin_get_history(struct skin *skin, ring_data_t *dst, int patch, int cell);
-//double skin_get_expavg(struct skin *skin, int patch, int cell);
 int skin_set_alpha(struct skin *skin, double alpha);
 
+// Baseline calibration on live system
 void skin_calibrate_start(struct skin *skin);
 void skin_calibrate_stop(struct skin *skin);
 
 // Loads calibration profile from CSV file
 void skin_read_profile(struct skin *skin, const char *csv);
 
-ring_data_t skin_get_calibration(struct skin *skin, int patch, int cell);
+cell_t skin_get_calibration(struct skin *skin, int patch, int cell);
 
 #endif // SKINTALK_H_

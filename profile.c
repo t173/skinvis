@@ -12,7 +12,9 @@
 #include "util.h"
 #include "profile.h"
 
-static long get_long(const char *tok) {
+static long
+get_long(const char *tok)
+{
 	long ret;
 	char *end;
 	ret = strtol(tok, &end, 10);
@@ -22,7 +24,9 @@ static long get_long(const char *tok) {
 	return ret;
 }
 
-static double get_double(const char *tok) {
+static double
+get_double(const char *tok)
+{
 	double ret;
 	char *end;
 	ret = strtod(tok, &end);
@@ -32,7 +36,9 @@ static double get_double(const char *tok) {
 	return ret;
 }
 
-static inline struct patch_profile *profile_patch_new(int id) {
+static inline struct patch_profile *
+profile_patch_new(int id)
+{
 	struct patch_profile *p;
 	ALLOC(p);
 	memset(p, 0, sizeof(*p));
@@ -40,7 +46,9 @@ static inline struct patch_profile *profile_patch_new(int id) {
 	return p;
 }
 
-int profile_read(struct profile *p, const char *csvfile) {
+int
+profile_read(struct profile *p, const char *csvfile)
+{
 	FILE *f;
 	char *line = NULL;
 	size_t len = 0;
@@ -71,7 +79,7 @@ int profile_read(struct profile *p, const char *csvfile) {
 				// TODO: verify column order by checking headers
 				continue;
 			}
-			
+
 			switch ( col ) {
 			case 0:  // patch ID
 				patch = get_long(tok);

@@ -1,4 +1,4 @@
-// util.h -*-C-*- 
+// util.h -*-C-*-
 //
 // Utility macros
 

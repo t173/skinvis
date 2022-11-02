@@ -25,6 +25,12 @@ struct patch_profile {
 	double c2[PROFILE_CELLS];  // quadratic coefficient
 };
 
+// Get calibration value from struct profile *prof
+#define profile_baseline(prof, p, c)  ( (prof)->patch[p]->baseline[c] )
+#define profile_c0(prof, p, c)        ( (prof)->patch[p]->c0[c] )
+#define profile_c1(prof, p, c)        ( (prof)->patch[p]->c1[c] )
+#define profile_c2(prof, p, c)        ( (prof)->patch[p]->c2[c] )
+
 // Reads calibration profile from CSV file into p
 int profile_read(struct profile *p, const char *csvfile);
 

@@ -1,4 +1,4 @@
-// main.c -*-C-*- 
+// main.c -*-C-*-
 //
 // Stand alone skin sensor prototype serial communication interface
 // checker
@@ -15,17 +15,17 @@
 #include "cmdline.h"
 #include "skintalk.h"
 
-skin_t skin;
+struct skin skin;
 
-void
-fullstop(int signum) {
+void fullstop(int signum)
+{
 	skin_stop(&skin);
 }
 
-int
-main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
 	parse_cmdline(argc, argv);
-	if ( !skin_init(&skin, cmdline.patches, cmdline.cells, cmdline.device, cmdline.history) ) {
+	if ( !skin_init(&skin, cmdline.patches, cmdline.cells, cmdline.device) ) {
 		FATAL("Cannot initialize skin structure");
 	}
 	if ( signal(SIGINT, fullstop) == SIG_ERR ) {
@@ -38,12 +38,12 @@ main(int argc, char *argv[]) {
 		FATAL("Cannot start skin reader");
 	}
 
-	const int len = skin.history;
-	int32_t *buf;
-	if ( !(buf = malloc(len*sizeof(*buf))) ) {
-		FATAL("Cannot allocate buffer");
-	}
-	skin_get_history(&skin, buf, 4, 8);
+	/* const int len = skin.history; */
+	/* int32_t *buf; */
+	/* if ( !(buf = malloc(len*sizeof(*buf))) ) { */
+	/* 	FATAL("Cannot allocate buffer"); */
+	/* } */
+	/* skin_get_history(&skin, buf, 4, 8); */
 
 	skin_wait(&skin);
 	skin_free(&skin);

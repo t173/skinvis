@@ -17,7 +17,6 @@
 
 #define OPT_DEVICE  'd'
 #define OPT_BAUD    'b'
-#define OPT_HISTORY 'n'
 #define OPT_LOGFILE 'l'
 #define OPT_PATCHES 'p'
 #define OPT_CELLS   'c'
@@ -34,7 +33,6 @@ struct cmdline_opt {
 } cmdline_opts[] = {
 	{ .ch=OPT_DEVICE, .desc="serial device to use", .has_arg=1, .arg_desc="device" },
 	{ .ch=OPT_BAUD, .desc="baud rate for serial device", .has_arg=1, .arg_desc="baud" },
-	{ .ch=OPT_HISTORY, .desc="number of past values per sensor to store", .has_arg=1, .arg_desc="num" },
 	{ .ch=OPT_LOGFILE, .desc="write stream to log file", .has_arg=1, .arg_desc="filename" },
 	{ .ch=OPT_PATCHES, .desc="number of patches (default=1)", .has_arg=1, .arg_desc="num" },
 	{ .ch=OPT_CELLS, .desc="number of cells per patch (default=16)", .has_arg=1, .arg_desc="num" },
@@ -47,7 +45,6 @@ struct cmdline_opt {
 struct cmdline cmdline = {
 	.device = "/dev/ttyUSB0",
 	.baud = 2000000,
-	.history = 128,
 	.logfile = NULL,
 	.patches = 8,
 	.cells = 16,
@@ -137,9 +134,6 @@ void parse_cmdline(int argc, char *argv[]) {
 			break;
 		case OPT_BAUD:
 			cmdline.baud = get_positive(optarg, cmdline_opts[index].desc);
-			break;
-		case OPT_HISTORY:
-			cmdline.history = get_positive(optarg, cmdline_opts[index].desc);
 			break;
 		case OPT_LOGFILE:
 			cmdline.logfile = optarg;

@@ -1,4 +1,4 @@
-// skintalk.c -*-C-*- 
+// skintalk.c -*-C-*-
 //
 // Skin serial communication interface
 
@@ -22,15 +22,11 @@
 #include "skintalk.h"
 #include "profile.h"
 
+#define STOP_CODE   '0'  // stop octocan
 #define START1_CODE '1'  // start with original protocol
 #define START2_CODE '2'  // start, but including sequence numbers
 
-#define START_CODE START2_CODE
-#define STOP_CODE   '0'  // stop octocan
-
-// Size of read buffer
-//#define BUFFER_SIZE 4096
-#define BUFFER_SIZE 128
+#define START_CODE START1_CODE
 
 // Size of a cell record in bytes
 #if START_CODE == START2_CODE
@@ -38,6 +34,10 @@
 #else
 #define RECORD_SIZE 5
 #endif
+
+// Size of read buffer
+//#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 128
 
 // Magic number at start of each record
 #define RECORD_START 0x55
@@ -78,13 +78,13 @@ transmit_char(int fd, char code)
 	}
 }
 
-static int
+static inline int
 is_record_start(uint8_t *p)
 {
 	return (p[0] == RECORD_START) && (p[RECORD_SIZE] == RECORD_START);
 }
 
-inline static int32_t
+static int32_t
 convert_24to32(uint8_t *src)
 {
 	// input is 24 bits (3 bytes) in big-endian: MSB, middle, LSB
@@ -127,30 +127,8 @@ read_bytes(int fd, void *dst, size_t count)
 
 //--------------------------------------------------------------------
 
-#define RING_AT(s,p,c) ( (s)->rings[((s)->num_cells)*(p) + (c)] )
-
-// Allocates and initializes ring buffers
-static int
-skin_allocate(skin_t *skin, int patches, int cells)
-{
-	if ( !(skin->rings = malloc(patches*cells*sizeof(*skin->rings))) ) {
-		WARNING("Cannot allocate ring buffers");
-		return 0;
-	}
-	for ( int p=0; p<patches; ++p ) {
-		for ( int c=0; c<cells; ++c ) {
-			if ( !ring_init(&RING_AT(skin, p, c), skin->history) ) {
-				WARNING("Cannot initialize ring buffer");
-				free(skin->rings);
-				return 0;
-			}
-		}
-	}
-	return 1;
-}
-
 int
-skin_init(skin_t *skin, int patches, int cells, const char *device, int history)
+skin_init(struct skin *skin, int patches, int cells, const char *device)
 {
 	DEBUGMSG("skin_init()");
 	if ( !skin )
@@ -159,29 +137,24 @@ skin_init(skin_t *skin, int patches, int cells, const char *device, int history)
 	skin->num_patches = patches;
 	skin->num_cells = cells;
 	skin->device = device;
-	skin->history = history;
 	profile_init(&skin->profile);
-	return skin_allocate(skin, patches, cells);
+	ALLOCN(skin->value, patches*cells);
+	return 1;
 }
 
 void
-skin_free(skin_t *skin)
+skin_free(struct skin *skin)
 {
 	DEBUGMSG("skin_free()");
 	if ( !skin ) {
 		return;
 	}
-	for ( int p=0; p < skin->num_patches; ++p ) {
-		for ( int c=0; c < skin->num_cells; ++c ) {
-			ring_free(&RING_AT(skin, p, c));
-		}
-	}
-	free(skin->rings);
+	free(skin->value);
 	profile_free(&skin->profile);
 }
 
 void
-write_csv_header(skin_t *skin, FILE *f)
+write_csv_header(struct skin *skin, FILE *f)
 {
 	// Note: internal patch numbers start at 0, external (device/user)
 	// start at 1, so here we write 1-based patch numbers
@@ -205,7 +178,7 @@ get_time(struct timespec *dst)
 }
 
 void
-write_csv_row(skin_t *skin, FILE *f, FILE *debuglog)
+write_csv_row(struct skin *skin, FILE *f, FILE *debuglog)
 {
 	int pos;
 	struct timespec now;
@@ -213,17 +186,7 @@ write_csv_row(skin_t *skin, FILE *f, FILE *debuglog)
 	fprintf(f, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
-			ring_t *ring = &RING_AT(skin, p, c);
-			if ( ring->pos == 0 ) {
-			  pos = ring->capacity - 1;
-			} else {
-			  pos = ring->pos - 1;
-			}
-			long value = (long)ring->buf[pos];
-			if ( value == 0 ) {
-			  DEBUG_LOG(debuglog, "zero,%d", pos);
-			}
-			fprintf(f, ",%ld", value);
+			fprintf(f, ",%ld", skin_cell(skin, p, c));
 		}
 	}
 	fprintf(f, "\n");
@@ -237,7 +200,7 @@ static void *
 skin_reader(void *args)
 {
 	DEBUGMSG("skin_reader()");
-	skin_t *skin = args;
+	struct skin *skin = args;
 	int fd;
 	uint8_t buffer[BUFFER_SIZE];
 	struct record record;
@@ -304,7 +267,8 @@ skin_reader(void *args)
 			}
 
 			pthread_mutex_lock(&skin->lock);
-			ring_write(&RING_AT(skin, patch, record.cell), record.value);
+			/* ring_write(&RING_AT(skin, patch, record.cell), record.value); */
+			skin_cell(skin, record.patch, record.cell) = record.value;
 			pthread_mutex_unlock(&skin->lock);
 			skin->total_records++;
 
@@ -327,7 +291,7 @@ skin_reader(void *args)
 }
 
 int
-skin_start(skin_t *skin)
+skin_start(struct skin *skin)
 {
 	DEBUGMSG("skin_start()");
 	skin->shutdown = 0;
@@ -343,7 +307,7 @@ skin_start(skin_t *skin)
 }
 
 void
-skin_wait(skin_t *skin)
+skin_wait(struct skin *skin)
 {
 	DEBUGMSG("skin_wait()");
 	pthread_join(skin->reader, NULL);
@@ -351,44 +315,25 @@ skin_wait(skin_t *skin)
 }
 
 void
-skin_stop(skin_t *skin)
+skin_stop(struct skin *skin)
 {
 	DEBUGMSG("skin_stop()");
 	skin->shutdown = 1;
 }
 
-void
-skin_get_history(skin_t *skin, ring_data_t *dst, int patch, int cell)
-{
-	// Note: patch number from user starts at 1
-	pthread_mutex_lock(&skin->lock);
-	ring_get_history(&RING_AT(skin, patch - 1, cell), dst);
-	pthread_mutex_unlock(&skin->lock);
-}
-
 int
-skin_set_alpha(skin_t *skin, double alpha)
+skin_set_alpha(struct skin *skin, double alpha)
 {
-	for ( int p=0; p < skin->num_patches; ++p )
-		for ( int c=0; c < skin->num_cells; ++c )
-			if ( !ring_set_alpha(&RING_AT(skin, p, c), alpha) )
-				return 0;
+	/* for ( int p=0; p < skin->num_patches; ++p ) */
+	/* 	for ( int c=0; c < skin->num_cells; ++c ) */
+	/* 		if ( !ring_set_alpha(&RING_AT(skin, p, c), alpha) ) */
+	/* 			return 0; */
+	skin->alpha = alpha;
 	return 1;
 }
 
-double
-skin_get_expavg(skin_t *skin, int patch, int cell)
-{
-	// Note: patch number from user starts at 1
-	double avg;
-	pthread_mutex_lock(&skin->lock);
-	avg = RING_AT(skin, patch - 1, cell).expavg;
-	pthread_mutex_unlock(&skin->lock);
-	return avg;
-}
-
 void
-skin_log_stream(skin_t *skin, const char *filename)
+skin_log_stream(struct skin *skin, const char *filename)
 {
 	if ( skin ) {
 		skin->log = filename;
@@ -396,7 +341,7 @@ skin_log_stream(skin_t *skin, const char *filename)
 }
 
 void
-skin_debuglog_stream(skin_t *skin, const char *filename)
+skin_debuglog_stream(struct skin *skin, const char *filename)
 {
 	if ( skin ) {
 		skin->debuglog = filename;
@@ -404,31 +349,32 @@ skin_debuglog_stream(skin_t *skin, const char *filename)
 }
 
 void
-skin_calibrate_start(skin_t *skin)
+skin_calibrate_start(struct skin *skin)
 {
 	DEBUGMSG("skin_calibrate_start()");
 	pthread_mutex_lock(&skin->lock);
 	skin->calibrating = 1;
-	for ( int p=0; p < skin->num_patches; ++p )
-		for ( int c=0; c < skin->num_cells; ++c )
-			ring_calibrate_start(&RING_AT(skin, p, c));
+	/* for ( int p=0; p < skin->num_patches; ++p ) */
+	/* 	for ( int c=0; c < skin->num_cells; ++c ) */
+	/* 		ring_calibrate_start(&RING_AT(skin, p, c)); */
 	pthread_mutex_unlock(&skin->lock);
 }
 
 void
-skin_calibrate_stop(skin_t *skin)
+skin_calibrate_stop(struct skin *skin)
 {
 	DEBUGMSG("skin_calibrate_stop()");
 	pthread_mutex_lock(&skin->lock);
-	for ( int p=0; p < skin->num_patches; ++p )
-		for ( int c=0; c < skin->num_cells; ++c )
-			ring_calibrate_stop(&RING_AT(skin, p, c));
+	/* for ( int p=0; p < skin->num_patches; ++p ) */
+	/* 	for ( int c=0; c < skin->num_cells; ++c ) */
+	/* 		ring_calibrate_stop(&RING_AT(skin, p, c)); */
 	skin->calibrating = 0;
+	//
 	pthread_mutex_unlock(&skin->lock);
 }
 
 void
-skin_read_profile(skin_t *skin, const char *csv)
+skin_read_profile(struct skin *skin, const char *csv)
 {
 	DEBUGMSG("skin_read_profile(\"%s\")", csv);
 	if ( skin->calibrating )
@@ -440,30 +386,30 @@ skin_read_profile(skin_t *skin, const char *csv)
 		DEBUGMSG("Read %d patch profiles", patches_read);
 	}
 
-	// Set profile to rings
-	struct patch_profile *prof;
-	for ( int p=0; p < skin->num_patches; ++p ) {
-		prof = skin->profile.patch[p];
-		if ( !prof )
-			continue;
-		for ( int c=0; c < skin->num_cells; ++c ) {
-			RING_AT(skin, p, c).baseline = prof->baseline[c];
-			RING_AT(skin, p, c).c0 = prof->c0[c];
-			RING_AT(skin, p, c).c1 = prof->c1[c];
-			RING_AT(skin, p, c).c2 = prof->c2[c];
-		}
-	}
+	/* // Set profile to rings */
+	/* struct patch_profile *prof; */
+	/* for ( int p=0; p < skin->num_patches; ++p ) { */
+	/* 	prof = skin->profile.patch[p]; */
+	/* 	if ( !prof ) */
+	/* 		continue; */
+	/* 	for ( int c=0; c < skin->num_cells; ++c ) { */
+	/* 		RING_AT(skin, p, c).baseline = prof->baseline[c]; */
+	/* 		RING_AT(skin, p, c).c0 = prof->c0[c]; */
+	/* 		RING_AT(skin, p, c).c1 = prof->c1[c]; */
+	/* 		RING_AT(skin, p, c).c2 = prof->c2[c]; */
+	/* 	} */
+	/* } */
 
 	pthread_mutex_unlock(&skin->lock);
 }
 
 ring_data_t
-skin_get_calibration(skin_t *skin, int patch, int cell)
+skin_get_calibration(struct skin *skin, int patch, int cell)
 {
 	// Note: patch number from user starts at 1
 	ring_data_t ret;
 	pthread_mutex_lock(&skin->lock);
-	ret = RING_AT(skin, patch - 1, cell).baseline;
+	ret = profile_baseline(skin->profile RING_AT(skin, patch - 1, cell).baseline;
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }

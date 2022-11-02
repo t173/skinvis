@@ -8,7 +8,6 @@
 extern struct cmdline {
 	char *device;   // serial device
 	int baud;       // baud rate
-	int history;    // number of values stored in ring buffers
 	const char *logfile;  // save data to log file
 	int verbose;    // verbose output
 	int patches;
