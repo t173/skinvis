@@ -103,7 +103,8 @@ convert_24to32(uint8_t *src)
 static void
 get_record(struct record *dst, uint8_t *src)
 {
-	dst->patch = (src[1] >> 4);
+	// Patch numbers from device start at 1, but cell numbers start at 0
+	dst->patch = (src[1] >> 4) - 1;
 	dst->cell = src[1] & 0x0F;
 	dst->value = convert_24to32(&src[2]);
 }
@@ -137,6 +138,7 @@ skin_init(struct skin *skin, int patches, int cells, const char *device)
 	skin->num_patches = patches;
 	skin->num_cells = cells;
 	skin->device = device;
+	skin->alpha = 1.0;
 	profile_init(&skin->profile);
 	ALLOCN(skin->value, patches*cells);
 	return 1;
@@ -194,13 +196,23 @@ write_csv_row(struct skin *skin, FILE *f, FILE *debuglog)
 
 //--------------------------------------------------------------------
 
+#define CALIBRATED_SCALE 100
+
 static inline int
 get_bucket(struct skin *skin, int patch, int cell)
 {
-	if ( skin->num_patches == 1 ) {
-		return cell;
+	return patch*skin->num_cells + cell;
+}
+
+static cell_t
+scale_value(struct skin *skin, int patch, int cell, cell_t value)
+{
+	struct patch_profile *p = skin->profile.patch[patch];
+	value -= p->baseline[cell];
+	if ( p->c1[cell] == 0.0 ) {
+		return 0;
 	} else {
-		return patch*skin->num_cells + cell;
+		return CALIBRATED_SCALE*(p->c0[cell] + value*(p->c1[cell] + value*p->c2[cell]));
 	}
 }
 
@@ -210,12 +222,14 @@ skin_cell_write(struct skin *skin, int patch, int cell, cell_t value)
 {
 	if ( skin->calibrating ) {
 		const int i = get_bucket(skin, patch, cell);
+		pthread_mutex_lock(&skin->lock);
 		skin->calib_sum[i] += value;
 		skin->calib_count[i]++;
+		pthread_mutex_unlock(&skin->lock);
 	} else {
+		value = scale_value(skin, patch, cell, value);
 		pthread_mutex_lock(&skin->lock);
-		skin_cell(skin, patch, cell) = value;
-		skin->total_records++;
+		skin_cell(skin, patch, cell) = skin->alpha*value + (1 - skin->alpha)*skin_cell(skin, patch, cell);
 		pthread_mutex_unlock(&skin->lock);
 	}
 }
@@ -265,7 +279,7 @@ skin_reader(void *args)
 		if ( pos + RECORD_SIZE > BUFFER_SIZE ) {
 			// If out of space, roll back the tape and refill it
 			DEBUG_LOG(debuglog, "rollback,%d", pos);
-			int scrap = BUFFER_SIZE - pos;
+			const int scrap = BUFFER_SIZE - pos;
 			memmove(buffer, buffer + pos, scrap);
 			skin->total_bytes += read_bytes(fd, buffer + scrap, BUFFER_SIZE - scrap);
 			pos = 0;
@@ -282,23 +296,22 @@ skin_reader(void *args)
 		}
 
 		get_record(&record, buffer + pos);
+		skin->total_records++;
 		pos += RECORD_SIZE;
 
-		int patch = 0;
-		if ( record.cell < skin->num_cells ) {
-			if ( skin->num_patches > 1 && record.patch > 0 && record.patch <= skin->num_patches ) {
-				// Patch numbers from device start at 1
-				patch = record.patch - 1;
-			}
+		DEBUG_LOG(debuglog, "read,%d@%d=%d", record.patch, record.cell, record.value);
+		if ( record.patch >= skin->num_patches || record.cell >= skin->num_cells ) {
+			DEBUG_LOG(debuglog, "skip,%d@%d", record.patch, record.cell);
+			skin->skipped_records++;
+			continue;
+		}
+		skin_cell_write(skin, record.patch, record.cell, record.value);
 
-			skin_cell_write(skin, patch, record.cell, record.value);
-
-			// Append to log
-			if ( log && !skin->calibrating && patch + 1 == skin->num_patches && record.cell + 1 == skin->num_cells ) {
-				pthread_mutex_lock(&skin->lock);
-				write_csv_row(skin, log, debuglog);
-				pthread_mutex_unlock(&skin->lock);
-			}
+		// Append to log if last column for CSV row
+		if ( log && !skin->calibrating && record.patch == skin->num_patches - 1 && record.cell == skin->num_cells - 1 ) {
+			//pthread_mutex_lock(&skin->lock);
+			write_csv_row(skin, log, debuglog);
+			//pthread_mutex_unlock(&skin->lock);
 		}
 	}
 	transmit_char(fd, STOP_CODE);
@@ -333,6 +346,7 @@ skin_wait(struct skin *skin)
 	DEBUGMSG("skin_wait()");
 	pthread_join(skin->reader, NULL);
 	pthread_mutex_destroy(&skin->lock);
+	skin->reader = 0;
 }
 
 void
@@ -370,8 +384,12 @@ void
 skin_calibrate_start(struct skin *skin)
 {
 	DEBUGMSG("skin_calibrate_start()");
+	if ( !skin->reader ) {
+		WARNING("Not reading from device (Try skin_start)");
+		return;
+	}
 	if ( skin->calibrating || skin->calib_sum || skin->calib_count ) {
-		WARNING("Already calibrating!");
+		WARNING("Calibration already in progress");
 		return;
 	}
 	pthread_mutex_lock(&skin->lock);
@@ -386,22 +404,31 @@ void
 skin_calibrate_stop(struct skin *skin)
 {
 	DEBUGMSG("skin_calibrate_stop()");
+	int warned = 0;
 	pthread_mutex_lock(&skin->lock);
 	skin->calibrating = 0;
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_patches; c++ ) {
 			const int i = get_bucket(skin, p, c);
-			profile_baseline(skin->profile, p, c) = skin->calib_sum[i]/skin->calib_count[i];
+			if ( skin->calib_count[i] > 0 ) {
+				profile_baseline(skin->profile, p, c) = skin->calib_sum[i]/skin->calib_count[i];
+			} else {
+				if ( !warned ) {
+					WARNING("No calibration samples recorded");
+					warned = 1;
+				}
+				profile_baseline(skin->profile, p, c) = 0;
+			}
 		}
 	}
 	free(skin->calib_sum);
-	free(skin->calib_count);
 	skin->calib_sum = NULL;
+	free(skin->calib_count);
 	skin->calib_count = NULL;
 	pthread_mutex_unlock(&skin->lock);
 }
 
-void
+int
 skin_read_profile(struct skin *skin, const char *csv)
 {
 	DEBUGMSG("skin_read_profile(\"%s\")", csv);
@@ -409,10 +436,9 @@ skin_read_profile(struct skin *skin, const char *csv)
 		skin_calibrate_stop(skin);
 
 	// Read profile from CSV file
-	int patches_read = profile_read(&skin->profile, csv);
-	if ( patches_read == 0 ) {
-		DEBUGMSG("Read %d patch profiles", patches_read);
-	}
+	int ret = profile_read(&skin->profile, csv);
+	DEBUGMSG("Read %d patch profiles", ret);
+	return ret;
 }
 
 cell_t
@@ -420,7 +446,7 @@ skin_get_calibration(struct skin *skin, int patch, int cell)
 {
 	// Patch number from user starts at 1
 	pthread_mutex_lock(&skin->lock);
-	cell_t ret = profile_baseline(skin->profile, patch - 1, cell);
+	cell_t ret = profile_baseline(skin->profile, patch, cell);
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }

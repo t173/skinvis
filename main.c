@@ -34,18 +34,36 @@ int main(int argc, char *argv[])
 	if ( cmdline.logfile ) {
 		skin_log_stream(&skin, cmdline.logfile);
 	}
+	skin_debuglog_stream(&skin, "debug.out");
+	skin_read_profile(&skin, "profile.csv");
+	skin_log_stream(&skin, "log.csv");
+	skin_set_alpha(&skin, 0.5);
 	if ( !skin_start(&skin) ) {
 		FATAL("Cannot start skin reader");
 	}
+	sleep(1);
+	skin_calibrate_start(&skin);
+	sleep(4);
+	skin_calibrate_stop(&skin);
+	for ( int p=0; p<skin.num_patches; p++ ) {
+		for ( int c=0; c<skin.num_cells; c++ ) {
+			printf("(%2d, %2d) = %d\n", p, c, skin_get_calibration(&skin, p, c));
+		}
+	}
 
-	/* const int len = skin.history; */
-	/* int32_t *buf; */
-	/* if ( !(buf = malloc(len*sizeof(*buf))) ) { */
-	/* 	FATAL("Cannot allocate buffer"); */
-	/* } */
-	/* skin_get_history(&skin, buf, 4, 8); */
-
+	for ( int t=0; !skin.shutdown && t<10; t++ ) {
+		//printf("%lld bytes\t %lld records\n", skin.total_bytes, skin.total_records);
+		for ( int c=0; c<skin.num_cells; c++ ) {
+			printf("%10d", skin_cell(&skin, 1, c));
+		}
+		putchar('\n');
+		sleep(1);
+	}
+	skin_stop(&skin);
 	skin_wait(&skin);
+	printf("total bytes     = %lld\n", skin.total_bytes);
+	printf("total records   = %lld\n", skin.total_records);
+	printf("skipped records = %lld\n", skin.skipped_records);
 	skin_free(&skin);
 	return EXIT_SUCCESS;
 }

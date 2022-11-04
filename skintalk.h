@@ -29,13 +29,16 @@ struct skin {
 	pthread_t reader;        // serial reader and processing thread
 	pthread_mutex_t lock;    // mutex lock to protect against reader
 	int shutdown;            // whether trying to shutdown device
+
+	// Baseline calibration
 	int calibrating;         // whether performing baseline calibration
 	long long *calib_sum;    // batch sum while calibrating
 	int *calib_count;        // batch count while calibrating
 
 	// Performance statistics
-	long long total_bytes;   // odometer of bytes read from device
-	long long total_records; // number of records correctly parsed
+	long long total_bytes;     // odometer of bytes read from device
+	long long total_records;   // number of records correctly parsed
+	long long skipped_records; // records skipped
 };
 
 // Get value of cell c from patch p of struct skin *s
@@ -61,7 +64,7 @@ void skin_calibrate_start(struct skin *skin);
 void skin_calibrate_stop(struct skin *skin);
 
 // Loads calibration profile from CSV file
-void skin_read_profile(struct skin *skin, const char *csv);
+int skin_read_profile(struct skin *skin, const char *csv);
 
 cell_t skin_get_calibration(struct skin *skin, int patch, int cell);
 

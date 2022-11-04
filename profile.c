@@ -139,7 +139,7 @@ profile_tare(struct profile *p)
 {
 	for ( int i=0; i<PROFILE_MAXPATCHES; i++ ) {
 		if ( p->patch[i] ) {
-			memset(p->patch[i]->baseline, 0, sizeof(*p->patch[i]->baseline));
+			memset(p->patch[i]->baseline, 0, sizeof(p->patch[i]->baseline));
 		}
 	}
 }
@@ -154,8 +154,9 @@ profile_init(struct profile *p)
 void
 profile_free(struct profile *p)
 {
-	for ( int n=0; n < PROFILE_MAXPATCHES; n++ )
+	for ( int n=0; n < PROFILE_MAXPATCHES; n++ ) {
 		free(p->patch[n]);
+	}
 }
 
 //EOF
