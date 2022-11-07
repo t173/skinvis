@@ -47,16 +47,17 @@ int main(int argc, char *argv[])
 	skin_calibrate_stop(&skin);
 	for ( int p=0; p<skin.num_patches; p++ ) {
 		for ( int c=0; c<skin.num_cells; c++ ) {
-			printf("(%2d, %2d) = %d\n", p, c, skin_get_calibration(&skin, p, c));
+			printf("(%2d, %2d) = %g\n", p, c, skin_get_calibration(&skin, p, c));
 		}
 	}
 
 	for ( int t=0; !skin.shutdown && t<10; t++ ) {
 		//printf("%lld bytes\t %lld records\n", skin.total_bytes, skin.total_records);
 		for ( int c=0; c<skin.num_cells; c++ ) {
-			printf("%10d", skin_cell(&skin, 1, c));
+			printf("%10g", skin_cell(&skin, 1, c));
 		}
-		putchar('\n');
+		printf("  %g%%\n", skin_parse_quality(&skin));
+		//putchar('\n');
 		sleep(1);
 	}
 	skin_stop(&skin);

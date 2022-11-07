@@ -10,7 +10,7 @@
 #include "profile.h"
 
 // Value of a single skin cell
-typedef int32_t cell_t;
+typedef double cell_t;
 
 // Management of a skin sensor device
 struct skin {
@@ -67,5 +67,7 @@ void skin_calibrate_stop(struct skin *skin);
 int skin_read_profile(struct skin *skin, const char *csv);
 
 cell_t skin_get_calibration(struct skin *skin, int patch, int cell);
+
+double skin_parse_quality(struct skin *skin);
 
 #endif // SKINTALK_H_

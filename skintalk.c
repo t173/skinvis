@@ -57,6 +57,16 @@ struct record {
 };
 
 static void
+get_time(struct timespec *dst)
+{
+	static int warned = 0;
+	if ( clock_gettime(CLOCK_REALTIME, dst) < 0 && !warned ) {
+		WARNING("clock_gettime() failed: %s", strerror(errno));
+		warned = 1;
+	}
+}
+
+static void
 transmit_char(int fd, char code)
 {
 	fd_set set;
@@ -111,7 +121,7 @@ get_record(struct record *dst, uint8_t *src)
 
 // Wrapper for read(2)
 static size_t
-read_bytes(int fd, void *dst, size_t count)
+read_bytes(int fd, void *dst, size_t count, FILE *debuglog)
 {
 	size_t pos = 0;
 	size_t read_count = 0;
@@ -119,6 +129,14 @@ read_bytes(int fd, void *dst, size_t count)
 	do {
 		if ( (bytes_read = read(fd, dst + pos, count - pos)) < 0 ) {
 			FATAL("Error reading from device:\n%s", strerror(errno));
+		}
+		if ( debuglog ) {
+			struct timespec now; get_time(&now);
+			fprintf(debuglog, "%ld.%09ld,read,", (long)now.tv_sec, (long)now.tv_nsec);
+			for ( int i=0; i<bytes_read; i++ ) {
+				fprintf(debuglog, "%02hhX", ((unsigned char *)(dst + pos))[i]);
+			}
+			fprintf(debuglog, "\n");
 		}
 		pos += bytes_read;
 		read_count += bytes_read;
@@ -170,24 +188,14 @@ write_csv_header(struct skin *skin, FILE *f)
 }
 
 static void
-get_time(struct timespec *dst)
-{
-	static int warned = 0;
-	if ( clock_gettime(CLOCK_REALTIME, dst) < 0 && !warned ) {
-		WARNING("clock_gettime() failed: %s", strerror(errno));
-		warned = 1;
-	}
-}
-
-void
-write_csv_row(struct skin *skin, FILE *f, FILE *debuglog)
+write_csv_row(struct skin *skin, FILE *f)
 {
 	struct timespec now;
 	get_time(&now);
 	fprintf(f, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
-			fprintf(f, ",%d", skin_cell(skin, p, c));
+			fprintf(f, ",%g", skin_cell(skin, p, c));
 		}
 	}
 	fprintf(f, "\n");
@@ -196,7 +204,7 @@ write_csv_row(struct skin *skin, FILE *f, FILE *debuglog)
 
 //--------------------------------------------------------------------
 
-#define CALIBRATED_SCALE 100
+#define CALIBRATED_SCALE 1//00
 
 static inline int
 get_bucket(struct skin *skin, int patch, int cell)
@@ -272,16 +280,16 @@ skin_reader(void *args)
 	}
 
 	transmit_char(fd, START_CODE);
-	skin->total_bytes += read_bytes(fd, buffer, BUFFER_SIZE);
+	skin->total_bytes += read_bytes(fd, buffer, BUFFER_SIZE, debuglog);
 
 	int advanced = 0;
 	for ( int pos=0; !skin->shutdown; ) {
 		if ( pos + RECORD_SIZE > BUFFER_SIZE ) {
 			// If out of space, roll back the tape and refill it
-			DEBUG_LOG(debuglog, "rollback,%d", pos);
+			DEBUG_LOG(debuglog, "rewind,%d", pos);
 			const int scrap = BUFFER_SIZE - pos;
 			memmove(buffer, buffer + pos, scrap);
-			skin->total_bytes += read_bytes(fd, buffer + scrap, BUFFER_SIZE - scrap);
+			skin->total_bytes += read_bytes(fd, buffer + scrap, BUFFER_SIZE - scrap, debuglog);
 			pos = 0;
 		}
 
@@ -299,9 +307,9 @@ skin_reader(void *args)
 		skin->total_records++;
 		pos += RECORD_SIZE;
 
-		DEBUG_LOG(debuglog, "read,%d@%d=%d", record.patch, record.cell, record.value);
+		DEBUG_LOG(debuglog, "parse,%d.%d=%d", record.patch, record.cell, record.value);
 		if ( record.patch >= skin->num_patches || record.cell >= skin->num_cells ) {
-			DEBUG_LOG(debuglog, "skip,%d@%d", record.patch, record.cell);
+			DEBUG_LOG(debuglog, "skip,%d.%d", record.patch, record.cell);
 			skin->skipped_records++;
 			continue;
 		}
@@ -310,7 +318,7 @@ skin_reader(void *args)
 		// Append to log if last column for CSV row
 		if ( log && !skin->calibrating && record.patch == skin->num_patches - 1 && record.cell == skin->num_cells - 1 ) {
 			//pthread_mutex_lock(&skin->lock);
-			write_csv_row(skin, log, debuglog);
+			write_csv_row(skin, log);
 			//pthread_mutex_unlock(&skin->lock);
 		}
 	}
@@ -450,5 +458,20 @@ skin_get_calibration(struct skin *skin, int patch, int cell)
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }
+
+double
+skin_parse_quality(struct skin *skin)
+{
+	static long long last_total = 0;
+	static long long last_skipped = 0;
+	pthread_mutex_lock(&skin->lock);
+	double ret = 1.0 - (skin->skipped_records - last_skipped)/(skin->total_records - last_total);
+	last_total = skin->total_records;
+	last_skipped = skin->skipped_records;
+	pthread_mutex_unlock(&skin->lock);
+	return 100.0*ret;
+}
+
+
 
 //EOF
