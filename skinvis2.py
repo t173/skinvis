@@ -12,9 +12,11 @@ import time
 import datetime
 import argparse
 import threading
-import pandas
+import numpy as np
+import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 import skin
 
@@ -24,6 +26,17 @@ baud_rate = 2000000  # default, overrideable at cmdline
 
 shutdown = False
 total_frames = 0
+
+# Rotate 90 because patches are mounted sideways on octocan
+placement = np.rot90(np.array([
+    [1, 2, 10,  9],
+    [3, 4, 12, 11],
+    [6, 5, 13, 14],
+    [8, 7, 15, 16],
+]) - 1)
+
+pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
+cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
 
 def parse_cmdline():
     global cmdline
@@ -35,6 +48,10 @@ def parse_cmdline():
     parser.add_argument('--cells', type=int, default=16)
     parser.add_argument('--profile', metavar='CSVFILE', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
+    parser.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=(8, 5), help='set figure size in inches')
+    parser.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
+    parser.add_argument('--vmin', type=float, default=-40)#, default=-75000)
+    parser.add_argument('--vmax', type=float, default=40)#, default=75000)
     cmdline = parser.parse_args()
 
 def setup_octocan():
@@ -127,7 +144,71 @@ def stats_updater(sensor, view, sleep=2):
         misalign_before = misalign_now
         before = now
 
+num_rows = 2
+num_cols = 4
 
+def anim_init(sensor):
+    fig, axs = plt.subplots(num_rows, num_cols)
+    fig.set_figwidth(cmdline.figsize[0])
+    fig.set_figheight(cmdline.figsize[1])
+
+    margin = 0.05
+    plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0.01, hspace=0.01)
+    for ax in axs.flatten():
+        ax.axis('off')
+
+    vmin, vmax = cmdline.vmin, cmdline.vmax
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax, clip=True)
+    cmap = mpl.colors.LinearSegmentedColormap.from_list("cardinal", [
+        [0.00, 'black'],
+        [0.01, '#AD0000'],
+        [0.45, 'white'],
+        [0.55, 'white'],
+        [0.99, '#AD0000'],
+        [1.00, 'black'],
+    ])
+    mapper = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+    
+    ims = []
+    state = sensor.get_state()
+    for patch in range(sensor.patches):
+        row = patch//num_cols
+        col = patch % num_cols
+        A = np.array(state[patch])[placement]
+        ims.append(axs[row, col].imshow(A, norm=norm, cmap=cmap, vmin=cmdline.vmin, vmax=cmdline.vmax))
+    return fig, ims
+
+np.set_printoptions(formatter={'float': lambda x: "{0:8.3f}".format(x)})
+
+def anim_update(frame, sensor, ims):
+    state = sensor.get_state()
+    for patch in range(sensor.patches):
+        A = np.absolute(np.array(state[patch])[placement])#.clip(max=cmdline.vmax)
+        if patch == 1:
+            print()
+            print(A)
+        ims[patch].set_data(A)
+
+    global total_frames
+    total_frames += 1
+
+def calibrate(sensor, keep=True, show=True):
+    sensor.calibrate_start()
+    print('Baseline calibration... DO NOT TOUCH!')
+    time.sleep(4)
+    sensor.calibrate_stop()
+    print('Baseline calibration finished')
+    # baseline = None
+    # if keep:
+    #     rows = []
+    #     for patch in range(1, sensor.patches + 1):
+    #         for cell in range(sensor.cells):
+    #             rows.append([patch, cell, sensor.get_calib(patch, cell)])
+    #     baseline = pd.DataFrame(rows, columns=['patch', 'cell', 'calibration'])
+    #     if show:
+    #         print(baseline.values)
+    # return baseline
+            
 def main():
     global shutdown
     parse_cmdline()
@@ -139,8 +220,13 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
+    fig, ims = anim_init(sensor)
+    anim = animation.FuncAnimation(fig, func=anim_update, fargs=(sensor, ims), interval=cmdline.delay)
+    
     start_calibrate_button()
     sensor.start()
+    calibrate(sensor)
+
     plt.show()
 
     shutdown = True

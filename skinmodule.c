@@ -190,17 +190,39 @@ Skin_read_profile(SkinObject *self, PyObject *args) {
 	return Py_None;
 }
 
+static PyObject *
+Skin_get_state(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
+	//DEBUGMSG("Skin_get_state()");
+	skincell_t *state;
+	const int num_patches = self->skin.num_patches;
+	const int num_cells = self->skin.num_cells;
+	const int count = num_patches*num_cells;
+	ALLOCN(state, count);
+	skin_get_state(&self->skin, state);
+	PyObject* ret = PyList_New(num_patches);
+	for ( int p=0; p<num_patches; p++ ) {
+		PyObject* patch_list = PyList_New(num_cells);
+		for ( int c=0; c<num_cells; c++ ) {
+			PyObject* cell_value = Py_BuildValue("d", state[p*num_cells + c]);
+			PyList_SetItem(patch_list, c, cell_value);
+		}
+		PyList_SetItem(ret, p, patch_list);
+	}
+	return ret;
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
 	{ "stop", (PyCFunction)Skin_stop, METH_NOARGS, "Stops reading from the skin sensor device" },
 	{ "set_alpha", (PyCFunction)Skin_set_alpha, METH_VARARGS, "Sets alpha for exponential averaging" },
-	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Sets alpha for exponential averaging" },
-	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Sets alpha for exponential averaging" },
+	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Start baseline calibration" },
+	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Stop baseline calibration" },
 	{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
+	{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of the entire octocan" },
 	{ NULL }
 };
 

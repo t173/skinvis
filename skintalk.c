@@ -49,8 +49,10 @@
 			fprintf((s)->debuglog, "%ld.%09ld," ev "," val "\n", (long)now.tv_sec, (long)now.tv_nsec, ##__VA_ARGS__); \
 		} } while (0)
 
-// A single measurement of a sensor cell
-struct record {
+int placement[] = {8, 10, 13, 15,  9, 11, 12, 14,  1,  3,  4,  6,  0,  2,  5,  7};
+
+// A single raw value from a sensor cell
+struct skin_record {
 	short patch;
 	short cell;
 	int32_t value;
@@ -111,7 +113,7 @@ convert_24to32(uint8_t *src)
 }
 
 static void
-get_record(struct record *dst, uint8_t *src)
+get_record(struct skin_record *dst, uint8_t *src)
 {
 	// Patch numbers from device start at 1, but cell numbers start at 0
 	dst->patch = (src[1] >> 4) - 1;
@@ -145,6 +147,12 @@ read_bytes(struct skin *skin, void *dst, size_t count)
 }
 
 //--------------------------------------------------------------------
+
+int
+skin_init_octocan(struct skin *skin)
+{
+	return skin_init(skin, "/dev/ttyUSB0", 8, 16);
+}
 
 int
 skin_init(struct skin *skin, const char *device, int patches, int cells)
@@ -226,14 +234,14 @@ get_bucket(struct skin *skin, int patch, int cell)
 	return patch*skin->num_cells + cell;
 }
 
-static cell_t
+static skincell_t
 scale_value(struct skin *skin, int patch, int cell, int32_t rawvalue)
 {
 	if ( !skin->profile.num_patches )
-		return (cell_t)rawvalue;
+		return (skincell_t)rawvalue;
 
 	struct patch_profile *p = skin->profile.patch[patch];
-	cell_t value = rawvalue - p->baseline[cell];
+	skincell_t value = rawvalue - p->baseline[cell];
 	if ( p->c1[cell] == 0.0 ) {
 		return 0;
 	} else {
@@ -252,7 +260,7 @@ skin_cell_write(struct skin *skin, int patch, int cell, int32_t rawvalue)
 		skin->calib_count[i]++;
 		//pthread_mutex_unlock(&skin->lock);
 	} else {
-		cell_t value = scale_value(skin, patch, cell, rawvalue);
+		skincell_t value = scale_value(skin, patch, cell, rawvalue);
 		pthread_mutex_lock(&skin->lock);
 		skin_cell(skin, patch, cell) = skin->alpha*value + (1 - skin->alpha)*skin_cell(skin, patch, cell);
 		pthread_mutex_unlock(&skin->lock);
@@ -266,7 +274,7 @@ skin_reader(void *args)
 	DEBUGMSG("skin_reader()");
 	struct skin *skin = args;
 	uint8_t buffer[BUFFER_SIZE];
-	struct record record;
+	struct skin_record record;
 
 	transmit_char(skin->device_fd, STOP_CODE);
 	transmit_char(skin->device_fd, START_CODE);
@@ -453,14 +461,23 @@ skin_read_profile(struct skin *skin, const char *csv)
 	return ret;
 }
 
-cell_t
+skincell_t
 skin_get_calibration(struct skin *skin, int patch, int cell)
 {
 	// Patch number from user starts at 1
 	pthread_mutex_lock(&skin->lock);
-	cell_t ret = profile_baseline(skin->profile, patch, cell);
+	skincell_t ret = profile_baseline(skin->profile, patch, cell);
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
+}
+
+int
+skin_get_state(struct skin *skin, skincell_t *dst)
+{
+	pthread_mutex_lock(&skin->lock);
+	memcpy(dst, skin->value, skin->num_patches*skin->num_cells*sizeof(*skin->value));
+	pthread_mutex_unlock(&skin->lock);
+	return 1;
 }
 
 //EOF

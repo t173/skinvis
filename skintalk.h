@@ -10,13 +10,13 @@
 #include "profile.h"
 
 // Value of a single skin cell
-typedef double cell_t;
+typedef double skincell_t;
 
 // Management of a skin sensor device
 struct skin {
 	int num_patches;         // number of sensor patches
 	int num_cells;           // number of tactile sensors per patch
-	cell_t *value;           // array of cell values
+	skincell_t *value;       // array of cell values
 
 	struct profile profile;  // dynamic range calibration profile
 
@@ -47,6 +47,7 @@ struct skin {
 // Get value of cell c from patch p of struct skin *s
 #define skin_cell(s, p, c) ((s)->value[(p)*((s)->num_cells) + (c)])
 
+int skin_init_octocan(struct skin *skin);
 int skin_init(struct skin *skin, const char *device, int patches, int cells);
 void skin_free(struct skin *skin);
 int skin_start(struct skin *skin);
@@ -69,6 +70,8 @@ void skin_calibrate_stop(struct skin *skin);
 // Loads calibration profile from CSV file
 int skin_read_profile(struct skin *skin, const char *csv);
 
-cell_t skin_get_calibration(struct skin *skin, int patch, int cell);
+skincell_t skin_get_calibration(struct skin *skin, int patch, int cell);
+
+int skin_get_state(struct skin *skin, skincell_t *dst);
 
 #endif // SKINTALK_H_
