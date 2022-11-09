@@ -14,6 +14,7 @@
 struct profile {
 	const char *csvfile;
 	struct patch_profile *patch[PROFILE_MAXPATCHES];
+	int num_patches;
 };
 
 struct patch_profile {

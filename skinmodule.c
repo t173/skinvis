@@ -64,7 +64,7 @@ Skin_init(SkinObject *self, PyObject *args, PyObject *kw) {
 	if ( !PyArg_ParseTupleAndKeywords(args, kw, "|sii", kwlist, &stage.device, &stage.num_patches, &stage.num_cells) ) {
 		return -1;
 	}
-	skin_init(&self->skin, stage.num_patches, stage.num_cells, stage.device);
+	skin_init(&self->skin, stage.device, stage.num_patches, stage.num_cells);
 	return 0;
 }
 
@@ -73,7 +73,9 @@ static PyMemberDef Skin_members[] = {
 	{ "patches", T_INT, offsetof(SkinObject, skin.num_patches), 0, "number of sensor patches" },
 	{ "cells", T_INT, offsetof(SkinObject, skin.num_cells), 0, "number of cells per patch" },
 	{ "total_bytes", T_LONGLONG, offsetof(SkinObject, skin.total_bytes), 0, "odometer of bytes read from device" },
-	{ "total_records", T_LONGLONG, offsetof(SkinObject, skin.total_records), 0, "odometer of accepted records" },
+	{ "total_records", T_LONGLONG, offsetof(SkinObject, skin.total_records), 0, "odometer of parsed records" },
+	{ "dropped_records", T_LONGLONG, offsetof(SkinObject, skin.dropped_records), 0, "count of dropped records" },
+	{ "misalignments", T_LONGLONG, offsetof(SkinObject, skin.misalignments), 0, "count of misalignment adjustments" },
 	{ NULL }
 };
 

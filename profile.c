@@ -84,7 +84,7 @@ profile_read(struct profile *p, const char *csvfile)
 			case 0:  // patch ID
 				patch = get_long(tok);
 
-				// Note patch IDs start at 1
+				// Note patch IDs from file start at 1
 				if ( patch <= 0 || patch > PROFILE_MAXPATCHES ) {
 					FATAL("line %d: Invalid patch number %d (max supported %d)",
 								line_num, patch, PROFILE_MAXPATCHES);
@@ -131,6 +131,7 @@ profile_read(struct profile *p, const char *csvfile)
 	}
 	free(line);
 	fclose(f);
+	p->num_patches = patches_found;
 	return patches_found;
 }
 
@@ -149,6 +150,7 @@ profile_init(struct profile *p)
 {
 	p->csvfile = NULL;
 	memset(p->patch, 0, sizeof(p->patch));
+	p->num_patches = 0;
 }
 
 void

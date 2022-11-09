@@ -42,12 +42,12 @@
 // Magic number at start of each record
 #define RECORD_START 0x55
 
-// Record some event with a value to debugging log
-#define DEBUG_LOG(f, msg, ...) do { \
-  if ( f ) { \
-    struct timespec now; get_time(&now); \
-    fprintf(f, "%ld.%09ld," msg "\n", (long)now.tv_sec, (long)now.tv_nsec, ##__VA_ARGS__); \
-  } } while (0)
+// Record some event with a value to debug log
+#define EVENT(s, ev, val, ...) do {					\
+		if ( (s)->debuglog ) {					\
+			struct timespec now; get_time(&now);		\
+			fprintf((s)->debuglog, "%ld.%09ld," ev "," val "\n", (long)now.tv_sec, (long)now.tv_nsec, ##__VA_ARGS__); \
+		} } while (0)
 
 // A single measurement of a sensor cell
 struct record {
@@ -121,22 +121,22 @@ get_record(struct record *dst, uint8_t *src)
 
 // Wrapper for read(2)
 static size_t
-read_bytes(int fd, void *dst, size_t count, FILE *debuglog)
+read_bytes(struct skin *skin, void *dst, size_t count)
 {
 	size_t pos = 0;
 	size_t read_count = 0;
 	ssize_t bytes_read;
 	do {
-		if ( (bytes_read = read(fd, dst + pos, count - pos)) < 0 ) {
+		if ( (bytes_read = read(skin->device_fd, dst + pos, count - pos)) < 0 ) {
 			FATAL("Error reading from device:\n%s", strerror(errno));
 		}
-		if ( debuglog ) {
+		if ( skin->debuglog ) {
 			struct timespec now; get_time(&now);
-			fprintf(debuglog, "%ld.%09ld,read,", (long)now.tv_sec, (long)now.tv_nsec);
+			fprintf(skin->debuglog, "%ld.%09ld,read,", (long)now.tv_sec, (long)now.tv_nsec);
 			for ( int i=0; i<bytes_read; i++ ) {
-				fprintf(debuglog, "%02hhX", ((unsigned char *)(dst + pos))[i]);
+				fprintf(skin->debuglog, "%02hhX", ((unsigned char *)(dst + pos))[i]);
 			}
-			fprintf(debuglog, "\n");
+			fprintf(skin->debuglog, "\n");
 		}
 		pos += bytes_read;
 		read_count += bytes_read;
@@ -147,7 +147,7 @@ read_bytes(int fd, void *dst, size_t count, FILE *debuglog)
 //--------------------------------------------------------------------
 
 int
-skin_init(struct skin *skin, int patches, int cells, const char *device)
+skin_init(struct skin *skin, const char *device, int patches, int cells)
 {
 	DEBUGMSG("skin_init()");
 	if ( !skin )
@@ -159,6 +159,14 @@ skin_init(struct skin *skin, int patches, int cells, const char *device)
 	skin->alpha = 1.0;
 	profile_init(&skin->profile);
 	ALLOCN(skin->value, patches*cells);
+	skin->log = NULL;
+	skin->debuglog = NULL;
+
+	// Open device
+	if ( (skin->device_fd = open(skin->device, O_RDWR)) < 0 ) {
+		WARNING("Cannot open device: %s", skin->device);
+		return 0;
+	}
 	return 1;
 }
 
@@ -174,31 +182,37 @@ skin_free(struct skin *skin)
 }
 
 void
-write_csv_header(struct skin *skin, FILE *f)
+write_csv_header(struct skin *skin)
 {
+	if ( !skin || !skin->log )
+		return;
+
 	// Note: internal patch numbers start at 0, external (device/user)
 	// start at 1, so here we write 1-based patch numbers
-	fprintf(f, "time");
+	fprintf(skin->log, "time");
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
-			fprintf(f, ",patch%d_cell%d", p + 1, c);
+			fprintf(skin->log, ",patch%d_cell%d", p + 1, c);
 		}
 	}
-	fprintf(f, "\n");
+	fprintf(skin->log, "\n");
 }
 
 static void
-write_csv_row(struct skin *skin, FILE *f)
+write_csv_row(struct skin *skin)
 {
+	if ( !skin->log )
+		return;
+
 	struct timespec now;
 	get_time(&now);
-	fprintf(f, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
+	fprintf(skin->log, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
-			fprintf(f, ",%g", skin_cell(skin, p, c));
+			fprintf(skin->log, ",%g", skin_cell(skin, p, c));
 		}
 	}
-	fprintf(f, "\n");
+	fprintf(skin->log, "\n");
 	//fflush(f);
 }
 
@@ -213,10 +227,13 @@ get_bucket(struct skin *skin, int patch, int cell)
 }
 
 static cell_t
-scale_value(struct skin *skin, int patch, int cell, cell_t value)
+scale_value(struct skin *skin, int patch, int cell, int32_t rawvalue)
 {
+	if ( !skin->profile.num_patches )
+		return (cell_t)rawvalue;
+
 	struct patch_profile *p = skin->profile.patch[patch];
-	value -= p->baseline[cell];
+	cell_t value = rawvalue - p->baseline[cell];
 	if ( p->c1[cell] == 0.0 ) {
 		return 0;
 	} else {
@@ -226,16 +243,16 @@ scale_value(struct skin *skin, int patch, int cell, cell_t value)
 
 // Records a value to a specific cell
 void
-skin_cell_write(struct skin *skin, int patch, int cell, cell_t value)
+skin_cell_write(struct skin *skin, int patch, int cell, int32_t rawvalue)
 {
 	if ( skin->calibrating ) {
 		const int i = get_bucket(skin, patch, cell);
-		pthread_mutex_lock(&skin->lock);
-		skin->calib_sum[i] += value;
+		//pthread_mutex_lock(&skin->lock);
+		skin->calib_sum[i] += rawvalue;
 		skin->calib_count[i]++;
-		pthread_mutex_unlock(&skin->lock);
+		//pthread_mutex_unlock(&skin->lock);
 	} else {
-		value = scale_value(skin, patch, cell, value);
+		cell_t value = scale_value(skin, patch, cell, rawvalue);
 		pthread_mutex_lock(&skin->lock);
 		skin_cell(skin, patch, cell) = skin->alpha*value + (1 - skin->alpha)*skin_cell(skin, patch, cell);
 		pthread_mutex_unlock(&skin->lock);
@@ -248,48 +265,21 @@ skin_reader(void *args)
 {
 	DEBUGMSG("skin_reader()");
 	struct skin *skin = args;
-	int fd;
 	uint8_t buffer[BUFFER_SIZE];
 	struct record record;
 
-	if ( (fd = open(skin->device, O_RDWR)) < 0 ) {
-		WARNING("Cannot open device: %s", skin->device);
-		return NULL;
-	}
-	transmit_char(fd, STOP_CODE);
-
-	// Start logger
-	FILE *log = NULL;
-	if ( skin->log ) {
-		if ( !(log = fopen(skin->log, "wt")) ) {
-			WARNING("Cannot open log file %s\n%s", skin->log, strerror(errno));
-		} else {
-			DEBUGMSG("Logging to %s", skin->log);
-			write_csv_header(skin, log);
-		}
-	}
-
-	FILE *debuglog = NULL;
-	if ( skin->debuglog ) {
-		if ( !(debuglog = fopen(skin->debuglog, "wt")) ) {
-			WARNING("Cannot open debugging log file %s\n%s", skin->debuglog, strerror(errno));
-		} else {
-			DEBUGMSG("Logging debugging information to %s", skin->debuglog);
-		}
-		fprintf(debuglog, "time,event,value\n");
-	}
-
-	transmit_char(fd, START_CODE);
-	skin->total_bytes += read_bytes(fd, buffer, BUFFER_SIZE, debuglog);
+	transmit_char(skin->device_fd, STOP_CODE);
+	transmit_char(skin->device_fd, START_CODE);
+	skin->total_bytes += read_bytes(skin, buffer, BUFFER_SIZE);
 
 	int advanced = 0;
 	for ( int pos=0; !skin->shutdown; ) {
 		if ( pos + RECORD_SIZE > BUFFER_SIZE ) {
-			// If out of space, roll back the tape and refill it
-			DEBUG_LOG(debuglog, "rewind,%d", pos);
+			// If out of space, rewind the tape and refill it
+			EVENT(skin, "rewind", "%d", pos);
 			const int scrap = BUFFER_SIZE - pos;
 			memmove(buffer, buffer + pos, scrap);
-			skin->total_bytes += read_bytes(fd, buffer + scrap, BUFFER_SIZE - scrap, debuglog);
+			skin->total_bytes += read_bytes(skin, buffer + scrap, BUFFER_SIZE - scrap);
 			pos = 0;
 		}
 
@@ -299,7 +289,8 @@ skin_reader(void *args)
 			continue;
 		}
 		if ( advanced > 0 ) {
-			DEBUG_LOG(debuglog, "advance,%d", advanced);
+			EVENT(skin, "misalign", "%d", advanced);
+			skin->misalignments++;
 			advanced = 0;
 		}
 
@@ -307,27 +298,27 @@ skin_reader(void *args)
 		skin->total_records++;
 		pos += RECORD_SIZE;
 
-		DEBUG_LOG(debuglog, "parse,%d.%d=%d", record.patch, record.cell, record.value);
+		EVENT(skin, "parse", "%d.%d=%d", record.patch, record.cell, record.value);
 		if ( record.patch >= skin->num_patches || record.cell >= skin->num_cells ) {
-			DEBUG_LOG(debuglog, "skip,%d.%d", record.patch, record.cell);
-			skin->skipped_records++;
+			EVENT(skin, "drop", "%d.%d", record.patch, record.cell);
+			skin->dropped_records++;
 			continue;
 		}
 		skin_cell_write(skin, record.patch, record.cell, record.value);
 
 		// Append to log if last column for CSV row
-		if ( log && !skin->calibrating && record.patch == skin->num_patches - 1 && record.cell == skin->num_cells - 1 ) {
+		if ( skin->log && !skin->calibrating && record.patch == skin->num_patches - 1 && record.cell == skin->num_cells - 1 ) {
 			//pthread_mutex_lock(&skin->lock);
-			write_csv_row(skin, log);
+			write_csv_row(skin);
 			//pthread_mutex_unlock(&skin->lock);
 		}
 	}
-	transmit_char(fd, STOP_CODE);
-	if ( log ) {
-		fclose(log);
+	transmit_char(skin->device_fd, STOP_CODE);
+	if ( skin->log ) {
+		fflush(skin->log);
 	}
-	if ( debuglog ) {
-		fclose(debuglog);
+	if ( skin->debuglog ) {
+		fflush(skin->debuglog);
 	}
 	return skin;
 }
@@ -377,15 +368,27 @@ skin_set_alpha(struct skin *skin, double alpha)
 void
 skin_log_stream(struct skin *skin, const char *filename)
 {
-	if ( skin )
-		skin->log = filename;
+	if ( !skin || !filename )
+		return;
+	if ( !(skin->log = fopen(filename, "wt")) ) {
+		WARNING("Cannot open log file %s\n%s", filename, strerror(errno));
+	} else {
+		DEBUGMSG("Logging to %s", filename);
+		write_csv_header(skin);
+	}
 }
 
 void
 skin_debuglog_stream(struct skin *skin, const char *filename)
 {
-	if ( skin )
-		skin->debuglog = filename;
+	if ( !skin || !filename )
+		return;
+	if ( !(skin->debuglog = fopen(filename, "wt")) ) {
+		WARNING("Cannot open debugging log file %s\n%s", filename, strerror(errno));
+	} else {
+		DEBUGMSG("Logging debugging information to %s", filename);
+	}
+	fprintf(skin->debuglog, "time,event,value\n");
 }
 
 void
@@ -416,7 +419,7 @@ skin_calibrate_stop(struct skin *skin)
 	pthread_mutex_lock(&skin->lock);
 	skin->calibrating = 0;
 	for ( int p=0; p < skin->num_patches; p++ ) {
-		for ( int c=0; c < skin->num_patches; c++ ) {
+		for ( int c=0; c < skin->num_cells; c++ ) {
 			const int i = get_bucket(skin, p, c);
 			if ( skin->calib_count[i] > 0 ) {
 				profile_baseline(skin->profile, p, c) = skin->calib_sum[i]/skin->calib_count[i];
@@ -427,6 +430,7 @@ skin_calibrate_stop(struct skin *skin)
 				}
 				profile_baseline(skin->profile, p, c) = 0;
 			}
+			EVENT(skin, "baseline", "%d.%d=%d", p, c, profile_baseline(skin->profile, p, c));
 		}
 	}
 	free(skin->calib_sum);
@@ -458,20 +462,5 @@ skin_get_calibration(struct skin *skin, int patch, int cell)
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }
-
-double
-skin_parse_quality(struct skin *skin)
-{
-	static long long last_total = 0;
-	static long long last_skipped = 0;
-	pthread_mutex_lock(&skin->lock);
-	double ret = 1.0 - (skin->skipped_records - last_skipped)/(skin->total_records - last_total);
-	last_total = skin->total_records;
-	last_skipped = skin->skipped_records;
-	pthread_mutex_unlock(&skin->lock);
-	return 100.0*ret;
-}
-
-
 
 //EOF

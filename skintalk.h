@@ -22,8 +22,10 @@ struct skin {
 
 	double alpha;            // alpha value for exponential averaging
 	const char *device;      // communication device to use
-	const char *log;         // log record stream to filename
-	const char *debuglog;    // log debugging data to filename
+	int device_fd;           // file descriptor for device
+
+	FILE *log;               // log record stream to filename
+	FILE *debuglog;          // log debugging info to filename
 
 	// Reader thread management
 	pthread_t reader;        // serial reader and processing thread
@@ -38,13 +40,14 @@ struct skin {
 	// Performance statistics
 	long long total_bytes;     // odometer of bytes read from device
 	long long total_records;   // number of records correctly parsed
-	long long skipped_records; // records skipped
+	long long dropped_records; // invalid records dropped
+	long long misalignments;   // misalignment advances
 };
 
 // Get value of cell c from patch p of struct skin *s
 #define skin_cell(s, p, c) ((s)->value[(p)*((s)->num_cells) + (c)])
 
-int skin_init(struct skin *skin, int patches, int cells, const char *device);
+int skin_init(struct skin *skin, const char *device, int patches, int cells);
 void skin_free(struct skin *skin);
 int skin_start(struct skin *skin);
 void skin_wait(struct skin *skin);
@@ -67,7 +70,5 @@ void skin_calibrate_stop(struct skin *skin);
 int skin_read_profile(struct skin *skin, const char *csv);
 
 cell_t skin_get_calibration(struct skin *skin, int patch, int cell);
-
-double skin_parse_quality(struct skin *skin);
 
 #endif // SKINTALK_H_
