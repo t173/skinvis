@@ -23,6 +23,7 @@
 #include "profile.h"
 
 // (x,y) position of each cell on octocan
+// Based on order [[ 8, 10, 13, 15], [ 9, 11, 12, 14], [ 1, 3, 4, 6], [ 0, 2, 5, 7]]
 int skincell_posx[] = {0, 0, 1, 1, 2, 2, 3, 3, 0, 0, 1, 1, 2, 2, 3, 3};
 int skincell_posy[] = {3, 2, 3, 2, 2, 3, 2, 3, 0, 1, 0, 1, 1, 0, 1, 0};
 
@@ -161,7 +162,7 @@ read_bytes(struct skin *skin, void *dst, size_t count)
 int
 skin_init_octocan(struct skin *skin)
 {
-	return skin_init(skin, "/dev/ttyUSB0", 8, 16);
+	return skin_init(skin, "/dev/octocan", 8, 16);
 }
 
 int
@@ -526,7 +527,7 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 		p.magnitude += state[c];
 	}
 	for ( int c=0; c<num_cells; c++ ) {
-		double norm = state[c]/p.magnitude;
+		double norm = p.magnitude == 0.0 ? 1 : state[c]/p.magnitude;
 		p.x += norm*skincell_posx[c];
 		p.y += norm*skincell_posy[c];
 	}
@@ -537,10 +538,10 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 	return 1;
 }
 
-int
-skin_get_pressure(struct skin *skin, struct skin_pressure *dst)
-{
-	return 1;
-}
+/* int */
+/* skin_get_pressure(struct skin *skin, struct skin_pressure *dst) */
+/* { */
+/* 	return 1; */
+/* } */
 
 //EOF

@@ -88,7 +88,7 @@ skincell_t skin_get_calibration(struct skin *skin, int patch, int cell);
 int skin_get_state(struct skin *skin, skincell_t *dst);
 int skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst);
 
-int skin_get_pressure(struct skin *skin, struct skin_pressure *dst);
+//int skin_get_pressure(struct skin *skin, struct skin_pressure *dst);
 int skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst);
 
 #endif // SKINTALK_H_
