@@ -193,14 +193,25 @@ def anim_init(sensor):
 
 np.set_printoptions(formatter={'float': lambda x: "{0:8.3f}".format(x)})
 
+state_max = None
 def anim_update(frame, sensor, ims, circles):
+    global state_max
     state = sensor.get_state()
+    if state_max is None:
+        state_max = state
+    else:
+        state_max = np.maximum(state_max, state)
     for patch in range(sensor.patches):
         A = np.absolute(np.array(state[patch])[placement])#.clip(max=cmdline.vmax)
         pressure = sensor.get_patch_pressure(patch)
-        # if patch == 1:
-        #     print(pressure)
-        circles[patch].set_offsets([pressure[1:]])
+        if patch == 1:
+            v = np.array(state[1])[placement]
+            print()
+            for i in range(placement.shape[0]):
+                for j in range(placement.shape[1]):
+                    print(' %2d: %8.3f' % (placement[i,j], v[i, j]), end='')
+                print()
+        circles[patch].set_offsets(np.array(pressure[1:]) + 1.5)
         if pressure[0] >= 0.2:
             circles[patch].set_sizes([max(1, CIRCLE_SCALE*pressure[0])])
         else:
@@ -240,6 +251,8 @@ def main():
     shutdown = True
     sensor.stop()
     stats_thread.join()
+
+    print(state_max)
 
 if __name__ == '__main__':
     main()
