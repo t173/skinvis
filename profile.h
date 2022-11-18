@@ -40,6 +40,7 @@ int profile_read(struct profile *p, const char *csvfile);
 
 // Zero baseline calibration values
 void profile_tare(struct profile *p);
+void profile_set_baseline(struct profile *p, int patch, int cell, double value);
 
 // Calibration profile
 void profile_init(struct profile *p);

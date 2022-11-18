@@ -22,6 +22,10 @@
 #include "skintalk.h"
 #include "profile.h"
 
+// (x,y) position of each cell on octocan
+int skincell_posx[] = {0, 0, 1, 1, 2, 2, 3, 3, 0, 0, 1, 1, 2, 2, 3, 3};
+int skincell_posy[] = {3, 2, 3, 2, 2, 3, 2, 3, 0, 1, 0, 1, 1, 0, 1, 0};
+
 #define STOP_CODE   '0'  // stop octocan
 #define START1_CODE '1'  // start with original protocol
 #define START2_CODE '2'  // start, but including sequence numbers
@@ -57,6 +61,12 @@ struct skin_record {
 	short cell;
 	int32_t value;
 };
+
+static void
+exp_avg(double *dst, double value, double alpha)
+{
+	*dst = alpha*value + (1 - alpha)*(*dst);
+}
 
 static void
 get_time(struct timespec *dst)
@@ -165,8 +175,10 @@ skin_init(struct skin *skin, const char *device, int patches, int cells)
 	skin->num_cells = cells;
 	skin->device = device;
 	skin->alpha = 1.0;
+	skin->pressure_alpha = 0.5;
 	profile_init(&skin->profile);
 	ALLOCN(skin->value, patches*cells);
+	ALLOCN(skin->pressure, patches);
 	skin->log = NULL;
 	skin->debuglog = NULL;
 
@@ -186,6 +198,7 @@ skin_free(struct skin *skin)
 		return;
 	}
 	free(skin->value);
+	free(skin->pressure);
 	profile_free(&skin->profile);
 }
 
@@ -226,8 +239,6 @@ write_csv_row(struct skin *skin)
 
 //--------------------------------------------------------------------
 
-#define CALIBRATED_SCALE 1//00
-
 static inline int
 get_bucket(struct skin *skin, int patch, int cell)
 {
@@ -245,7 +256,7 @@ scale_value(struct skin *skin, int patch, int cell, int32_t rawvalue)
 	if ( p->c1[cell] == 0.0 ) {
 		return 0;
 	} else {
-		return CALIBRATED_SCALE*(p->c0[cell] + value*(p->c1[cell] + value*p->c2[cell]));
+		return p->c0[cell] + value*(p->c1[cell] + value*p->c2[cell]);
 	}
 }
 
@@ -262,7 +273,8 @@ skin_cell_write(struct skin *skin, int patch, int cell, int32_t rawvalue)
 	} else {
 		skincell_t value = scale_value(skin, patch, cell, rawvalue);
 		pthread_mutex_lock(&skin->lock);
-		skin_cell(skin, patch, cell) = skin->alpha*value + (1 - skin->alpha)*skin_cell(skin, patch, cell);
+		//skin_cell(skin, patch, cell) = skin->alpha*value + (1 - skin->alpha)*skin_cell(skin, patch, cell);
+		exp_avg(&skin_cell(skin, patch, cell), value, skin->alpha);
 		pthread_mutex_unlock(&skin->lock);
 	}
 }
@@ -373,6 +385,16 @@ skin_set_alpha(struct skin *skin, double alpha)
 	return 0;
 }
 
+int
+skin_set_pressure_alpha(struct skin *skin, double alpha)
+{
+	if ( skin && alpha > 0 && alpha <= 1 ) {
+		skin->pressure_alpha = alpha;
+		return 1;
+	}
+	return 0;
+}
+
 void
 skin_log_stream(struct skin *skin, const char *filename)
 {
@@ -429,15 +451,16 @@ skin_calibrate_stop(struct skin *skin)
 	for ( int p=0; p < skin->num_patches; p++ ) {
 		for ( int c=0; c < skin->num_cells; c++ ) {
 			const int i = get_bucket(skin, p, c);
+			skincell_t value = 0;
 			if ( skin->calib_count[i] > 0 ) {
-				profile_baseline(skin->profile, p, c) = skin->calib_sum[i]/skin->calib_count[i];
+				value = skin->calib_sum[i]/skin->calib_count[i];
 			} else {
 				if ( !warned ) {
 					WARNING("No calibration samples recorded");
 					warned = 1;
 				}
-				profile_baseline(skin->profile, p, c) = 0;
 			}
+			profile_set_baseline(&skin->profile, p, c, value);
 			EVENT(skin, "baseline", "%d.%d=%d", p, c, profile_baseline(skin->profile, p, c));
 		}
 	}
@@ -477,6 +500,46 @@ skin_get_state(struct skin *skin, skincell_t *dst)
 	pthread_mutex_lock(&skin->lock);
 	memcpy(dst, skin->value, skin->num_patches*skin->num_cells*sizeof(*skin->value));
 	pthread_mutex_unlock(&skin->lock);
+	return skin->num_patches;
+}
+
+int
+skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)
+{
+	pthread_mutex_lock(&skin->lock);
+	memcpy(dst, skin->value + patch*skin->num_cells, skin->num_cells*sizeof(*skin->value));
+	pthread_mutex_unlock(&skin->lock);
+	return 1;
+}
+
+int
+skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
+{
+	const int num_cells = skin->num_cells;
+	skincell_t state[num_cells];
+	struct skin_pressure p = {};
+	skin_get_patch_state(skin, patch, state);
+	for ( int c=0; c<num_cells; c++ ) {
+		if ( state[c] > SKIN_PRESSURE_MAX )
+			state[c] = SKIN_PRESSURE_MAX;
+		state[c] /= SKIN_PRESSURE_MAX;
+		p.magnitude += state[c];
+	}
+	for ( int c=0; c<num_cells; c++ ) {
+		double norm = state[c]/p.magnitude;
+		p.x += norm*skincell_posx[c];
+		p.y += norm*skincell_posy[c];
+	}
+	exp_avg(&skin->pressure[patch].magnitude, p.magnitude, skin->pressure_alpha);
+	exp_avg(&skin->pressure[patch].x, p.x, skin->pressure_alpha);
+	exp_avg(&skin->pressure[patch].y, p.y, skin->pressure_alpha);
+	memcpy(dst, &skin->pressure[patch], sizeof(skin->pressure[patch]));
+	return 1;
+}
+
+int
+skin_get_pressure(struct skin *skin, struct skin_pressure *dst)
+{
 	return 1;
 }
 

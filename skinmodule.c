@@ -117,6 +117,21 @@ Skin_set_alpha(SkinObject *self, PyObject *args) {
 }
 
 static PyObject *
+Skin_set_pressure_alpha(SkinObject *self, PyObject *args) {
+	DEBUGMSG("Skin_set_pressure_alpha()");
+	double alpha;
+	if ( !self || !PyArg_ParseTuple(args, "d", &alpha) ) {
+		return NULL;
+	}
+	if ( !skin_set_pressure_alpha(&self->skin, alpha) ) {
+		PyErr_SetString(PyExc_ValueError, "Invalid alpha value (0, 1]");
+		return NULL;
+	}
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyObject *
 Skin_calibrate_start(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	DEBUGMSG("Skin_calibrate_start()");
 	skin_calibrate_start(&self->skin);
@@ -199,15 +214,32 @@ Skin_get_state(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	const int count = num_patches*num_cells;
 	ALLOCN(state, count);
 	skin_get_state(&self->skin, state);
-	PyObject* ret = PyList_New(num_patches);
+	PyObject *ret = PyList_New(num_patches);
 	for ( int p=0; p<num_patches; p++ ) {
-		PyObject* patch_list = PyList_New(num_cells);
+		PyObject *patch_list = PyList_New(num_cells);
 		for ( int c=0; c<num_cells; c++ ) {
-			PyObject* cell_value = Py_BuildValue("d", state[p*num_cells + c]);
+			PyObject *cell_value = Py_BuildValue("d", state[p*num_cells + c]);
 			PyList_SetItem(patch_list, c, cell_value);
 		}
 		PyList_SetItem(ret, p, patch_list);
 	}
+	return ret;
+}
+
+static PyObject *
+Skin_get_patch_pressure(SkinObject *self, PyObject *args) {
+	//DEBUGMSG("Skin_get_patch_pressure()");
+	int patch;
+	struct skin_pressure pressure;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		WARNING("Skin_get_patch_pressure() could not parse argument");
+		return NULL;
+	}
+	skin_get_patch_pressure(&self->skin, patch, &pressure);
+	PyObject *ret = PyList_New(3);
+	PyList_SetItem(ret, 0, Py_BuildValue("d", pressure.magnitude));
+	PyList_SetItem(ret, 1, Py_BuildValue("d", pressure.x));
+	PyList_SetItem(ret, 2, Py_BuildValue("d", pressure.y));
 	return ret;
 }
 
@@ -216,6 +248,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
 	{ "stop", (PyCFunction)Skin_stop, METH_NOARGS, "Stops reading from the skin sensor device" },
 	{ "set_alpha", (PyCFunction)Skin_set_alpha, METH_VARARGS, "Sets alpha for exponential averaging" },
+	{ "set_pressure_alpha", (PyCFunction)Skin_set_pressure_alpha, METH_VARARGS, "Sets alpha for pressure smoothing" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Start baseline calibration" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Stop baseline calibration" },
 	{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
@@ -223,6 +256,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
 	{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of the entire octocan" },
+	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
 	{ NULL }
 };
 

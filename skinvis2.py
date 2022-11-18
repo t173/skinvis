@@ -38,15 +38,24 @@ placement = np.rot90(np.array([
 pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
 cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
 
+CIRCLE_SCALE = 500
+CIRCLE_PROPS = {
+    'edgecolor': 'cadetblue',
+    'facecolor': None,
+    'lw': 2,
+    'alpha': 0.8,
+}
+
 def parse_cmdline():
     global cmdline
     parser = argparse.ArgumentParser()
     parser.add_argument('--device')
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
-    parser.add_argument('--alpha', type=float, default=1)
+    parser.add_argument('--alpha', type=float, default=0.8)
+    parser.add_argument('--pressure_alpha', type=float, default=0.1)
     parser.add_argument('--patches', type=int, default=8)
     parser.add_argument('--cells', type=int, default=16)
-    parser.add_argument('--profile', metavar='CSVFILE', help='dynamic range calibration from CSVFILE')
+    parser.add_argument('--profile', metavar='CSVFILE', default='profile.csv', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--figsize', metavar=('WIDTH', 'HEIGHT'), type=float, nargs=2, default=(8, 5), help='set figure size in inches')
     parser.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
@@ -83,6 +92,7 @@ def setup_octocan():
     # Setup sensor communication object
     sensor = skin.Skin(device=device, patches=cmdline.patches, cells=cmdline.cells)
     sensor.set_alpha(cmdline.alpha)
+    sensor.set_pressure_alpha(cmdline.pressure_alpha)
     if cmdline.profile:
         sensor.read_profile(cmdline.profile)
     return sensor
@@ -170,23 +180,31 @@ def anim_init(sensor):
     mapper = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
     
     ims = []
+    circles = []
     state = sensor.get_state()
     for patch in range(sensor.patches):
         row = patch//num_cols
         col = patch % num_cols
+        ax = axs[row, col]
         A = np.array(state[patch])[placement]
-        ims.append(axs[row, col].imshow(A, norm=norm, cmap=cmap, vmin=cmdline.vmin, vmax=cmdline.vmax))
-    return fig, ims
+        ims.append(ax.imshow(A, norm=norm, cmap=cmap, vmin=cmdline.vmin, vmax=cmdline.vmax, zorder=1))
+        circles.append(ax.scatter([0], [0], s=1, zorder=10, **CIRCLE_PROPS))
+    return fig, ims, circles
 
 np.set_printoptions(formatter={'float': lambda x: "{0:8.3f}".format(x)})
 
-def anim_update(frame, sensor, ims):
+def anim_update(frame, sensor, ims, circles):
     state = sensor.get_state()
     for patch in range(sensor.patches):
         A = np.absolute(np.array(state[patch])[placement])#.clip(max=cmdline.vmax)
-        if patch == 1:
-            print()
-            print(A)
+        pressure = sensor.get_patch_pressure(patch)
+        # if patch == 1:
+        #     print(pressure)
+        circles[patch].set_offsets([pressure[1:]])
+        if pressure[0] >= 0.2:
+            circles[patch].set_sizes([max(1, CIRCLE_SCALE*pressure[0])])
+        else:
+            circles[patch].set_sizes([0.001])
         ims[patch].set_data(A)
 
     global total_frames
@@ -198,16 +216,6 @@ def calibrate(sensor, keep=True, show=True):
     time.sleep(4)
     sensor.calibrate_stop()
     print('Baseline calibration finished')
-    # baseline = None
-    # if keep:
-    #     rows = []
-    #     for patch in range(1, sensor.patches + 1):
-    #         for cell in range(sensor.cells):
-    #             rows.append([patch, cell, sensor.get_calib(patch, cell)])
-    #     baseline = pd.DataFrame(rows, columns=['patch', 'cell', 'calibration'])
-    #     if show:
-    #         print(baseline.values)
-    # return baseline
             
 def main():
     global shutdown
@@ -220,8 +228,8 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
-    fig, ims = anim_init(sensor)
-    anim = animation.FuncAnimation(fig, func=anim_update, fargs=(sensor, ims), interval=cmdline.delay)
+    fig, ims, circles = anim_init(sensor)
+    anim = animation.FuncAnimation(fig, func=anim_update, fargs=(sensor, ims, circles), interval=cmdline.delay)
     
     start_calibrate_button()
     sensor.start()

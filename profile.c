@@ -161,4 +161,13 @@ profile_free(struct profile *p)
 	}
 }
 
+void
+profile_set_baseline(struct profile *p, int patch, int cell, double value)
+{
+	if ( !p->patch[patch] ) {
+		p->patch[patch] = profile_patch_new(patch);
+	}
+	p->patch[patch]->baseline[cell] = value;
+}
+
 //EOF

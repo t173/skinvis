@@ -12,15 +12,25 @@
 // Value of a single skin cell
 typedef double skincell_t;
 
+#define SKIN_PRESSURE_MAX 100
+
+struct skin_pressure {
+	double magnitude;
+	double x, y;
+};
+
 // Management of a skin sensor device
 struct skin {
 	int num_patches;         // number of sensor patches
 	int num_cells;           // number of tactile sensors per patch
 	skincell_t *value;       // array of cell values
+	double alpha;            // alpha value for exponential averaging
 
 	struct profile profile;  // dynamic range calibration profile
 
-	double alpha;            // alpha value for exponential averaging
+	double pressure_alpha;   // alpha for smoothing presure calculations
+	struct skin_pressure *pressure;
+
 	const char *device;      // communication device to use
 	int device_fd;           // file descriptor for device
 
@@ -62,6 +72,7 @@ void skin_log_stream(struct skin *skin, const char *filename);
 void skin_debuglog_stream(struct skin *skin, const char *filename);
 
 int skin_set_alpha(struct skin *skin, double alpha);
+int skin_set_pressure_alpha(struct skin *skin, double alpha);
 
 // Baseline calibration on live system
 void skin_calibrate_start(struct skin *skin);
@@ -72,6 +83,12 @@ int skin_read_profile(struct skin *skin, const char *csv);
 
 skincell_t skin_get_calibration(struct skin *skin, int patch, int cell);
 
+// Writes the latest state of all cells to dst. Values are (patch,
+// cell) in row major order.
 int skin_get_state(struct skin *skin, skincell_t *dst);
+int skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst);
+
+int skin_get_pressure(struct skin *skin, struct skin_pressure *dst);
+int skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst);
 
 #endif // SKINTALK_H_
