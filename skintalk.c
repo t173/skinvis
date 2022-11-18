@@ -24,8 +24,12 @@
 
 // (x,y) position of each cell on octocan
 // Based on order [[ 8, 10, 13, 15], [ 9, 11, 12, 14], [ 1, 3, 4, 6], [ 0, 2, 5, 7]]
-int skincell_posx[] = {0, 0, 1, 1, 2, 2, 3, 3, 0, 0, 1, 1, 2, 2, 3, 3};
-int skincell_posy[] = {3, 2, 3, 2, 2, 3, 2, 3, 0, 1, 0, 1, 1, 0, 1, 0};
+double skincell_posx[] = {-1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5, -1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5};
+double skincell_posy[] = { 1.5,  0.5,  1.5,  0.5,  0.5,  1.5,  0.5,  1.5, -1.5, -0.5, -1.5, -0.5, -0.5, -1.5, -0.5, -1.5};
+#define POSX_MIN -1.5
+#define POSX_MAX  1.5
+#define POSY_MIN -1.5
+#define POSY_MAX  1.5
 
 #define STOP_CODE   '0'  // stop octocan
 #define START1_CODE '1'  // start with original protocol
@@ -526,11 +530,14 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 		state[c] /= SKIN_PRESSURE_MAX;
 		p.magnitude += state[c];
 	}
+	p.magnitude = p.magnitude < 0 ? 0 : p.magnitude;
 	for ( int c=0; c<num_cells; c++ ) {
 		double norm = p.magnitude == 0.0 ? 1 : state[c]/p.magnitude;
 		p.x += norm*skincell_posx[c];
 		p.y += norm*skincell_posy[c];
 	}
+	p.x = p.x < POSX_MIN ? POSX_MIN : (p.x > POSX_MAX ? POSX_MAX : p.x);
+	p.y = p.y < POSY_MIN ? POSY_MIN : (p.y > POSY_MAX ? POSY_MAX : p.y);
 	exp_avg(&skin->pressure[patch].magnitude, p.magnitude, skin->pressure_alpha);
 	exp_avg(&skin->pressure[patch].x, p.x, skin->pressure_alpha);
 	exp_avg(&skin->pressure[patch].y, p.y, skin->pressure_alpha);
