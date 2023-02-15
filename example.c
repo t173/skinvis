@@ -34,10 +34,10 @@ int main()
 	// (asymptotically) alpha=0 would be never-changing.
 
 	// This is smoothing over individual tactels
-	skin_set_alpha(&skin, 0.5);
+	skin_set_alpha(&skin, 0.8);
 
 	// This is smoothing of the center of pressure position
-	skin_set_pressure_alpha(&skin, 0.3);
+	skin_set_pressure_alpha(&skin, 0.1);
 
 	// Dynamic range calibration comes from external file.  Read
 	// this before doing baseline
@@ -51,9 +51,12 @@ int main()
 	skin_calibrate_stop(&skin);
 
 	// Continuously read patch pressure
-	while (!skin.shutdown) {
-		skin_get_patch_pressure(&skin, 1, &pressure);
-		printf("%8.3f   (%8.3f,%8.3f)\n", pressure.magnitude, pressure.x, pressure.y);
+	//while (!skin.shutdown) {
+	for (double max=-1; !skin.shutdown; ) {
+		skin_get_patch_pressure(&skin, 2, &pressure);
+		printf("%8.3f [%8.3f]   (%8.3f,%8.3f)\n", pressure.magnitude, max, pressure.x, pressure.y);
+		if ( max < pressure.magnitude )
+			max = pressure.magnitude;
 	}
 
 	// Wait for reader thread to finish. It needs skin_stop signal

@@ -38,7 +38,7 @@ placement = np.rot90(np.array([
 pos_to_cell = { p: c for p, c in enumerate(placement.ravel()) }
 cell_to_pos = { c: p for p, c in enumerate(placement.ravel()) }
 
-CIRCLE_SCALE = 500
+CIRCLE_SCALE = 2
 CIRCLE_PROPS = {
     'edgecolor': 'cadetblue',
     'facecolor': None,
@@ -96,23 +96,6 @@ def setup_octocan():
     if cmdline.profile:
         sensor.read_profile(cmdline.profile)
     return sensor
-
-def start_calibrate_button():
-    def calibrate_button(sensor):
-        calibrate(sensor)
-        if cmdline.style == 'text':
-            df, _ = args
-            for patch in range(cmdline.patches):
-                for cell in range(cmdline.cells):
-                    current = int(sensor.get_expavg(patch, cell))
-                    df['min'] = df['max'] = current
-                    df['batch'] = df['count'] = 0
-
-    plt.figure(figsize=(1,1))
-    ax = plt.axes()
-    button = mpl.widgets.Button(ax, 'Tare')
-    button.label.set_fontsize(24)
-    button.on_clicked(lambda _: calibrate_button(sensor))
 
 def stats_updater(sensor, view, sleep=2):
     global shutdown, total_frames
@@ -204,19 +187,24 @@ def anim_update(frame, sensor, ims, circles):
     for patch in range(sensor.patches):
         A = np.absolute(np.array(state[patch])[placement])#.clip(max=cmdline.vmax)
         pressure = sensor.get_patch_pressure(patch)
+        magnitude = pressure[0]
+        print('\t%8.3f' % (magnitude), end='')
         if patch == 1:
             v = np.array(state[1])[placement]
-            print()
-            for i in range(placement.shape[0]):
-                for j in range(placement.shape[1]):
-                    print(' %2d: %8.3f' % (placement[i,j], v[i, j]), end='')
-                print()
+            # print()
+            # for i in range(placement.shape[0]):
+            #     for j in range(placement.shape[1]):
+            #         print(' %2d: %8.3f' % (placement[i,j], v[i, j]), end='')
+            #     print()
         circles[patch].set_offsets(np.array(pressure[1:]) + 1.5)
-        if pressure[0] >= 0.2:
-            circles[patch].set_sizes([max(1, CIRCLE_SCALE*pressure[0])])
-        else:
+
+        # Hide circle if magnitude below some threshold
+        if magnitude < 10:
             circles[patch].set_sizes([0.001])
+        else:
+            circles[patch].set_sizes([max(1, CIRCLE_SCALE*magnitude)])
         ims[patch].set_data(A)
+    print()
 
     global total_frames
     total_frames += 1
@@ -242,7 +230,12 @@ def main():
     fig, ims, circles = anim_init(sensor)
     anim = animation.FuncAnimation(fig, func=anim_update, fargs=(sensor, ims, circles), interval=cmdline.delay)
     
-    start_calibrate_button()
+    plt.figure(figsize=(1,1))
+    ax = plt.axes()
+    button = mpl.widgets.Button(ax, 'Tare')
+    button.label.set_fontsize(24)
+    button.on_clicked(lambda _: calibrate(sensor))
+
     sensor.start()
     calibrate(sensor)
 
@@ -256,5 +249,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+    profile = pd.read_csv(cmdline.profile).set_index(['patch', 'cell'])
 #EOF
 
