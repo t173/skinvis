@@ -536,6 +536,7 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 		p.x += norm*skincell_posx[c];
 		p.y += norm*skincell_posy[c];
 	}
+	p.magnitude *= SKIN_PRESSURE_MAX;
 	p.x = p.x < POSX_MIN ? POSX_MIN : (p.x > POSX_MAX ? POSX_MAX : p.x);
 	p.y = p.y < POSY_MIN ? POSY_MIN : (p.y > POSY_MAX ? POSY_MAX : p.y);
 	exp_avg(&skin->pressure[patch].magnitude, p.magnitude, skin->pressure_alpha);
