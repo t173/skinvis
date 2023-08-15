@@ -530,7 +530,8 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 		state[c] /= SKIN_PRESSURE_MAX;
 		p.magnitude += state[c];
 	}
-	p.magnitude = p.magnitude < 0 ? 0 : p.magnitude;
+	//p.magnitude = p.magnitude < 0 ? 0 : p.magnitude;
+	p.magnitude = p.magnitude < 0 ? -p.magnitude : p.magnitude;
 	for ( int c=0; c<num_cells; c++ ) {
 		double norm = p.magnitude == 0.0 ? 1 : state[c]/p.magnitude;
 		p.x += norm*skincell_posx[c];
