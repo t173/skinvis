@@ -170,7 +170,7 @@ def anim_init(sensor):
         col = patch % num_cols
         ax = axs[row, col]
         A = np.array(state[patch])[placement]
-        ims.append(ax.imshow(A, norm=norm, cmap=cmap, vmin=cmdline.vmin, vmax=cmdline.vmax, zorder=1))
+        ims.append(ax.imshow(A, norm=norm, cmap=cmap, zorder=1))
         circles.append(ax.scatter([0], [0], s=1, zorder=10, **CIRCLE_PROPS))
     return fig, ims, circles
 
@@ -251,4 +251,3 @@ if __name__ == '__main__':
     main()
     profile = pd.read_csv(cmdline.profile).set_index(['patch', 'cell'])
 #EOF
-
