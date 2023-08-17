@@ -1,6 +1,6 @@
 
-SRCS = main.c profile.c skintalk.c cmdline.c
-DEPS = profile.h skintalk.h util.h cmdline.h
+SRCS = main.c layout.c profile.c skintalk.c cmdline.c
+DEPS = profile.h layout.h skintalk.h util.h cmdline.h
 TARG = skintalk
 
 python = $(HOME)/python3.8/bin/python3.8
