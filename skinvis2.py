@@ -228,7 +228,7 @@ def main():
     stats_thread.start()
 
     fig, ims, circles = anim_init(sensor)
-    anim = animation.FuncAnimation(fig, func=anim_update, fargs=(sensor, ims, circles), interval=cmdline.delay)
+    anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, fargs=(sensor, ims, circles), interval=cmdline.delay)
     
     plt.figure(figsize=(1,1))
     ax = plt.axes()
