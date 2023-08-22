@@ -21,7 +21,7 @@ import matplotlib.animation as animation
 import skin
 
 # List of devices to try (if not given on cmdline)
-devices = ['/dev/ttyUSB0', '/dev/ttyUSB1']
+devices = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0']
 baud_rate = 2000000  # default, overrideable at cmdline
 
 shutdown = False
@@ -61,6 +61,7 @@ def parse_cmdline():
     parser.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
     parser.add_argument('--vmin', type=float, default=-40)#, default=-75000)
     parser.add_argument('--vmax', type=float, default=40)#, default=75000)
+    parser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
     cmdline = parser.parse_args()
 
 def setup_octocan():
@@ -79,7 +80,7 @@ def setup_octocan():
 
     # Configure serial
     def run_stty(*args):
-        return subprocess.run(['stty', '-F', device] + list(args), check=True)
+        return subprocess.run(['stty', '-clocal', '-F', device] + list(args), check=True)
     print("Configuring", device)
     try:
         run_stty('raw')
@@ -188,7 +189,7 @@ def anim_update(frame, sensor, ims, circles):
         A = np.absolute(np.array(state[patch])[placement])#.clip(max=cmdline.vmax)
         pressure = sensor.get_patch_pressure(patch)
         magnitude = pressure[0]
-        print('\t%8.3f' % (magnitude), end='')
+        #print('\t%8.3f' % (magnitude), end='')
         if patch == 1:
             v = np.array(state[1])[placement]
             # print()
@@ -204,7 +205,7 @@ def anim_update(frame, sensor, ims, circles):
         else:
             circles[patch].set_sizes([max(1, CIRCLE_SCALE*magnitude)])
         ims[patch].set_data(A)
-    print()
+    #print()
 
     global total_frames
     total_frames += 1
@@ -237,7 +238,8 @@ def main():
     button.on_clicked(lambda _: calibrate(sensor))
 
     sensor.start()
-    calibrate(sensor)
+    if not cmdline.nocalibrate:
+        calibrate(sensor)
 
     plt.show()
 
