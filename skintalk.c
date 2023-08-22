@@ -95,7 +95,7 @@ transmit_char(int fd, char code)
 	FD_ZERO(&set);
 	FD_SET(fd, &set);
 
-	ret = select(fd + 1, NULL, &set, NULL, &timeout);
+	ret = select(1, NULL, &set, NULL, &timeout);
 	if ( ret < 0 ) {
 		FATAL("select(2) error: %s", strerror(errno));
 	} else if ( ret == 0 ) {
