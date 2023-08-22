@@ -78,6 +78,7 @@ layout_read(struct layout *lo, const char *csvfile)
 				if ( col == 1 ) {
 					num_patches = patches_remaining = get_long(tok);
 					layout_init(lo, num_patches);
+					lo->csvfile = csvfile;
 					current_patch = 0;
 					state = S_PATCH_ID;
 					break;
@@ -92,6 +93,7 @@ layout_read(struct layout *lo, const char *csvfile)
 					patch_id = get_long(tok);
 				} else if ( col == 2 ) {
 					num_cells = get_long(tok);
+					current = &lo->patch[current_patch];
 					patch_layout_init(current, patch_id, num_cells);
 					current_cell = 0;
 					state = S_CELL_ID;
@@ -101,11 +103,11 @@ layout_read(struct layout *lo, const char *csvfile)
 				}
 			} else if ( state == S_CELL_ID ) {
 				if ( col == 1 ) {
-					lo->patch[current_patch].cell[current_cell].id = get_long(tok);
+					lo->patch[current_patch].cell_id[current_cell] = get_long(tok);
 				} else if ( col == 2 ) {
-					lo->patch[current_patch].cell[current_cell].x = get_double(tok);
+					lo->patch[current_patch].x[current_cell] = get_double(tok);
 				} else if ( col == 3 ) {
-					lo->patch[current_patch].cell[current_cell].y = get_double(tok);
+					lo->patch[current_patch].y[current_cell] = get_double(tok);
 					if ( ++current_cell == num_cells ) {
 						current_patch++;
 						state = S_PATCH_ID;
@@ -151,16 +153,20 @@ layout_free(struct layout *lo)
 void
 patch_layout_init(struct patch_layout *pl, int id, int num_cells)
 {
-	pl->id = id;
+	pl->patch_id = id;
 	pl->num_cells = num_cells;
-	ALLOCN(pl->cell, num_cells);
+	ALLOCN(pl->cell_id, num_cells);
+	ALLOCN(pl->x, num_cells);
+	ALLOCN(pl->y, num_cells);
 }
 
 void
 patch_layout_free(struct patch_layout *pl)
 {
 	if ( pl ) {
-		free(pl->cell);
+		free(pl->cell_id);
+		free(pl->x);
+		free(pl->y);
 	}
 }
 //EOF

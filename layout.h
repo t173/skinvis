@@ -12,13 +12,11 @@ struct layout {
 };
 
 struct patch_layout {
-	int id;         // patch ID
+	int patch_id;   // patch ID
 	int num_cells;  // number of cells this patch
-	
-	struct cell_layout {
-		int id;
-		double x, y;
-	} *cell;
+  
+	int *cell_id;   // cell IDs
+	double *x, *y;  // x,y positions of cells
 };
 
 // Reads layout from CSV file
