@@ -56,15 +56,17 @@ Skin_init(SkinObject *self, PyObject *args, PyObject *kw) {
 	DEBUGMSG("Skin_init()");
 	static char *kwlist[] = {
 		"device",
-		"patches",
-		"cells",
+		"layout",
 		NULL
 	};
-	struct skin stage = skin_default;
-	if ( !PyArg_ParseTupleAndKeywords(args, kw, "|sii", kwlist, &stage.device, &stage.num_patches, &stage.num_cells) ) {
+	const char *device;
+	const char *layout;
+	if ( !PyArg_ParseTupleAndKeywords(args, kw, "|ss", kwlist, &device, &layout) ) {
 		return -1;
 	}
-	skin_init(&self->skin, stage.device, stage.num_patches, stage.num_cells);
+	if ( !skin_from_layout(&self->skin, device, layout) ) {
+		return -1;
+	}
 	return 0;
 }
 
@@ -243,6 +245,26 @@ Skin_get_patch_pressure(SkinObject *self, PyObject *args) {
 	return ret;
 }
 
+static PyObject *
+Skin_get_layout(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
+	struct layout *lo = &self->skin.layout;
+	const int num_patches = lo->num_patches;
+
+	PyObject *ret = PyDict_New();
+	for ( int p=0; p < num_patches; p++ ) {
+		struct patch_layout *pl = &lo->patch[p];
+
+		PyObject *cells = PyDict_New();
+		for ( int c=0; c < pl->num_cells; c++ ) {
+			PyObject *id = PyLong_FromLong(pl->cell_id[c]);
+			PyObject *pos = PyTuple_Pack(2, Py_BuildValue("d", pl->x[c]), Py_BuildValue("d", pl->y[c]));
+			PyDict_SetItem(cells, id, pos);
+		}
+		PyDict_SetItem(ret, PyLong_FromLong((long)pl->patch_id), cells);
+	}
+	return ret;
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -257,6 +279,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
 	{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of the entire octocan" },
 	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
+	{ "get_layout", (PyCFunction)Skin_get_layout, METH_NOARGS, "Gets skin device layout of patches and cells" },
 	{ NULL }
 };
 

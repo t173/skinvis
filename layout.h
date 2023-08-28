@@ -8,6 +8,7 @@
 struct layout {
 	const char *csvfile;
 	int num_patches;
+	int max_cells_per_patch;
 	struct patch_layout *patch;  // array of size num_patches
 };
 
@@ -17,6 +18,8 @@ struct patch_layout {
   
 	int *cell_id;   // cell IDs
 	double *x, *y;  // x,y positions of cells
+	double xmin, xmax;
+	double ymin, ymax;
 };
 
 // Reads layout from CSV file

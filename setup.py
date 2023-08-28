@@ -6,7 +6,7 @@ DEBUG = True
 
 skinmodule = Extension(
     'skin',
-    sources=['skinmodule.c', 'skintalk.c', 'profile.c', 'ring.c'],
+    sources=['skinmodule.c', 'skintalk.c', 'profile.c', 'layout.c', 'ring.c'],
     libraries=['pthread'],
     extra_compile_args=['-DDEBUG'] if DEBUG else [],
     language='c11',

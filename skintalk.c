@@ -21,15 +21,16 @@
 #include "util.h"
 #include "skintalk.h"
 #include "profile.h"
+#include "layout.h"
 
 // (x,y) position of each cell on octocan
 // Based on order [[ 8, 10, 13, 15], [ 9, 11, 12, 14], [ 1, 3, 4, 6], [ 0, 2, 5, 7]]
-double skincell_posx[] = {-1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5, -1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5};
-double skincell_posy[] = { 1.5,  0.5,  1.5,  0.5,  0.5,  1.5,  0.5,  1.5, -1.5, -0.5, -1.5, -0.5, -0.5, -1.5, -0.5, -1.5};
-#define POSX_MIN -1.5
-#define POSX_MAX  1.5
-#define POSY_MIN -1.5
-#define POSY_MAX  1.5
+//double skincell_posx[] = {-1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5, -1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5};
+//double skincell_posy[] = { 1.5,  0.5,  1.5,  0.5,  0.5,  1.5,  0.5,  1.5, -1.5, -0.5, -1.5, -0.5, -0.5, -1.5, -0.5, -1.5};
+//#define POSX_MIN -1.5
+//#define POSX_MAX  1.5
+//#define POSY_MIN -1.5
+//#define POSY_MAX  1.5
 
 #define STOP_CODE   '0'  // stop octocan
 #define START1_CODE '1'  // start with original protocol
@@ -58,9 +59,7 @@ double skincell_posy[] = { 1.5,  0.5,  1.5,  0.5,  0.5,  1.5,  0.5,  1.5, -1.5, 
 			fprintf((s)->debuglog, "%ld.%09ld," ev "," val "\n", (long)now.tv_sec, (long)now.tv_nsec, ##__VA_ARGS__); \
 		} } while (0)
 
-int placement[] = {8, 10, 13, 15,  9, 11, 12, 14,  1,  3,  4,  6,  0,  2,  5,  7};
-
-// A single raw value from a sensor cell
+// A single (parsed) raw value from a sensor cell
 struct skin_record {
 	short patch;
 	short cell;
@@ -184,6 +183,37 @@ skin_init(struct skin *skin, const char *device, int patches, int cells)
 	profile_init(&skin->profile);
 	ALLOCN(skin->value, patches*cells);
 	ALLOCN(skin->pressure, patches);
+	skin->log = NULL;
+	skin->debuglog = NULL;
+
+	// Open device
+	if ( (skin->device_fd = open(skin->device, O_RDWR)) < 0 ) {
+		WARNING("Cannot open device: %s", skin->device);
+		return 0;
+	}
+	return 1;
+}
+
+int
+skin_from_layout(struct skin *skin, const char *device, const char *lofile)
+{
+	DEBUGMSG("skin_from_layout()");
+	if ( !skin || !lofile )
+		return 0;
+	memset(skin, 0, sizeof(*skin));
+	skin->device = device;
+	skin->alpha = 1.0;
+	skin->pressure_alpha = 0.5;
+	profile_init(&skin->profile);
+
+	if ( !layout_read(&skin->layout, lofile) )
+		return 0;
+
+	skin->num_patches = skin->layout.num_patches;
+	skin->num_cells = skin->layout.max_cells_per_patch;
+
+	ALLOCN(skin->value, skin->num_patches*skin->num_cells);
+	ALLOCN(skin->pressure, skin->num_patches);
 	skin->log = NULL;
 	skin->debuglog = NULL;
 
@@ -524,22 +554,29 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 	skincell_t state[num_cells];
 	struct skin_pressure p = {};
 	skin_get_patch_state(skin, patch, state);
+	skincell_t sum = 0;
 	for ( int c=0; c<num_cells; c++ ) {
 		if ( state[c] > SKIN_PRESSURE_MAX )
 			state[c] = SKIN_PRESSURE_MAX;
 		state[c] /= SKIN_PRESSURE_MAX;
-		p.magnitude += state[c];
+		sum += state[c];
 	}
-	//p.magnitude = p.magnitude < 0 ? 0 : p.magnitude;
-	p.magnitude = p.magnitude < 0 ? -p.magnitude : p.magnitude;
-	for ( int c=0; c<num_cells; c++ ) {
-		double norm = p.magnitude == 0.0 ? 1 : state[c]/p.magnitude;
-		p.x += norm*skincell_posx[c];
-		p.y += norm*skincell_posy[c];
+	//p.magnitude = p.magnitude < 0 ? -p.magnitude : p.magnitude;
+	if ( sum < 0 ) {
+		sum = -sum;
+	} else if ( sum == 0.0 ) {
+		sum = 1;
 	}
-	p.magnitude *= SKIN_PRESSURE_MAX;
-	p.x = p.x < POSX_MIN ? POSX_MIN : (p.x > POSX_MAX ? POSX_MAX : p.x);
-	p.y = p.y < POSY_MIN ? POSY_MIN : (p.y > POSY_MAX ? POSY_MAX : p.y);
+	
+	struct patch_layout *pl = &skin->layout.patch[patch];
+	for ( int c=0; c<pl->num_cells; c++ ) {
+		const double norm = state[c]/sum;
+		p.x += norm*pl->x[c];
+		p.y += norm*pl->y[c];
+	}
+	p.magnitude = sum*SKIN_PRESSURE_MAX;
+	p.x = p.x < pl->xmin ? pl->xmin : (p.x > pl->xmax ? pl->xmax : p.x);
+	p.y = p.y < pl->ymin ? pl->ymin : (p.y > pl->ymax ? pl->ymax : p.y);
 	exp_avg(&skin->pressure[patch].magnitude, p.magnitude, skin->pressure_alpha);
 	exp_avg(&skin->pressure[patch].x, p.x, skin->pressure_alpha);
 	exp_avg(&skin->pressure[patch].y, p.y, skin->pressure_alpha);

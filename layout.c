@@ -12,6 +12,9 @@
 #include "util.h"
 #include "layout.h"
 
+#define MIN(a,b) ( (a) <  (b) ? (a) : (b) )
+#define MAX(a,b) ( (a) >= (b) ? (a) : (b) )
+
 static long
 get_long(const char *tok)
 {
@@ -94,6 +97,7 @@ layout_read(struct layout *lo, const char *csvfile)
 				} else if ( col == 2 ) {
 					num_cells = get_long(tok);
 					current = &lo->patch[current_patch];
+					lo->max_cells_per_patch = MAX(num_cells, lo->max_cells_per_patch);
 					patch_layout_init(current, patch_id, num_cells);
 					current_cell = 0;
 					state = S_CELL_ID;
@@ -103,11 +107,26 @@ layout_read(struct layout *lo, const char *csvfile)
 				}
 			} else if ( state == S_CELL_ID ) {
 				if ( col == 1 ) {
-					lo->patch[current_patch].cell_id[current_cell] = get_long(tok);
+					current->cell_id[current_cell] = get_long(tok);
 				} else if ( col == 2 ) {
-					lo->patch[current_patch].x[current_cell] = get_double(tok);
+					const double x = get_double(tok);
+					current->x[current_cell] = x;
+					
+					if ( current_cell == 0 ) {
+						current->xmin = current->xmax = x;
+					} else {
+						current->xmin = MIN(x, current->xmin);
+						current->xmax = MAX(x, current->xmax);
+					}
 				} else if ( col == 3 ) {
-					lo->patch[current_patch].y[current_cell] = get_double(tok);
+					const double y = get_double(tok);
+					current->y[current_cell] = y;
+					if ( current_cell == 0 ) {
+						current->ymin = current->ymax = y;
+					} else {
+						current->ymin = MIN(y, current->ymin);
+						current->ymax = MAX(y, current->ymax);
+					}
 					if ( ++current_cell == num_cells ) {
 						current_patch++;
 						state = S_PATCH_ID;
@@ -136,6 +155,7 @@ layout_init(struct layout *lo, int num_patches)
 {
 	lo->csvfile = NULL;
 	lo->num_patches = num_patches;
+	lo->max_cells_per_patch = 0;
 	ALLOCN(lo->patch, num_patches);
 }
 
@@ -158,6 +178,8 @@ patch_layout_init(struct patch_layout *pl, int id, int num_cells)
 	ALLOCN(pl->cell_id, num_cells);
 	ALLOCN(pl->x, num_cells);
 	ALLOCN(pl->y, num_cells);
+	pl->xmin = pl->ymin = 0;
+	pl->xmax = pl->ymax = 0;
 }
 
 void

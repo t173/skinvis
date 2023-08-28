@@ -8,6 +8,7 @@
 #include <pthread.h>
 #include <stdint.h>
 #include "profile.h"
+#include "layout.h"
 
 // Value of a single skin cell
 typedef double skincell_t;
@@ -22,11 +23,12 @@ struct skin_pressure {
 // Management of a skin sensor device
 struct skin {
 	int num_patches;         // number of sensor patches
-	int num_cells;           // number of tactile sensors per patch
+	int num_cells;           // max number of tactile sensors per patch
 	skincell_t *value;       // array of cell values
 	double alpha;            // alpha value for exponential averaging
 
 	struct profile profile;  // dynamic range calibration profile
+	struct layout layout;    // layout of cells in patches
 
 	double pressure_alpha;   // alpha for smoothing presure calculations
 	struct skin_pressure *pressure;
@@ -59,6 +61,7 @@ struct skin {
 
 int skin_init_octocan(struct skin *skin);
 int skin_init(struct skin *skin, const char *device, int patches, int cells);
+int skin_from_layout(struct skin *skin, const char *device, const char *lofile);
 void skin_free(struct skin *skin);
 int skin_start(struct skin *skin);
 void skin_wait(struct skin *skin);

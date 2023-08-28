@@ -1,23 +1,24 @@
 
-SRCS = main.c layout.c profile.c skintalk.c cmdline.c
-DEPS = profile.h layout.h skintalk.h util.h cmdline.h
+SRCS = layout.c profile.c skintalk.c cmdline.c
+DEPS = layout.h profile.h skintalk.h util.h cmdline.h
 TARG = skintalk
 
-python = $(HOME)/python3.8/bin/python3.8
-python-config = $(python)-config
+python = /usr/bin/python3
+python_config = $(python)-config
 
 OBJS = $(SRCS:.c=.o)
 
 CC = gcc
-CCFLAGS = -g -std=c11 -Wall -DDEBUG=2 $(shell python-config --cflags)
+CCFLAGS = -g -std=c11 -Wall -DDEBUG=2 $(shell $(python_config) --cflags)
 
 # Any linked libraries (-lm -lpthread, etc.)
-LDLIBS = -lpthread $(shell python-config --libs)
-LDFLAGS = $(shell python-config --ldflags)
+LDLIBS = -lpthread $(shell $(python_config) --libs)
+LDFLAGS = $(shell $(python_config) --ldflags)
 
 .PHONY: all clean extension
 
-all: $(TARG) extension
+all: extension
+#all: $(TARG) extension
 
 clean:
 	@-$(RM) -r $(TARG) $(OBJS) a.out *~ build/

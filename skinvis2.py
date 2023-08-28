@@ -50,6 +50,7 @@ def parse_cmdline():
     global cmdline
     parser = argparse.ArgumentParser()
     parser.add_argument('--device')
+    parser.add_argument('--layout', default="octocan.layout")
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
@@ -91,9 +92,10 @@ def setup_octocan():
         sys.exit(1)
 
     # Setup sensor communication object
-    sensor = skin.Skin(device=device, patches=cmdline.patches, cells=cmdline.cells)
+    sensor = skin.Skin(device=device, layout=cmdline.layout)
     sensor.set_alpha(cmdline.alpha)
     sensor.set_pressure_alpha(cmdline.pressure_alpha)
+    breakpoint()
     if cmdline.profile:
         sensor.read_profile(cmdline.profile)
     return sensor
