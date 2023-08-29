@@ -541,8 +541,9 @@ skin_get_state(struct skin *skin, skincell_t *dst)
 int
 skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)
 {
+	int num_cells = skin->layout.patch[patch].num_cells;
 	pthread_mutex_lock(&skin->lock);
-	memcpy(dst, skin->value + patch*skin->num_cells, skin->num_cells*sizeof(*skin->value));
+	memcpy(dst, skin->value + patch*num_cells, num_cells*sizeof(*skin->value));
 	pthread_mutex_unlock(&skin->lock);
 	return 1;
 }

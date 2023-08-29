@@ -208,6 +208,37 @@ Skin_read_profile(SkinObject *self, PyObject *args) {
 }
 
 static PyObject *
+Skin_get_patch_profile(SkinObject *self, PyObject *args) {
+	DEBUGMSG("Skin_get_patch_profile()");
+	int patch;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		WARNING("Skin_get_patch_profile() could not parse argument");
+		return NULL;
+	}
+	struct patch_profile *prof = self->skin.profile.patch[patch];
+	const int num_cells = self->skin.layout.patch[patch].num_cells;
+
+	PyObject *ret = PyDict_New();
+	PyDict_SetItemString(ret, "id", PyLong_FromLong((long)prof->id));
+
+	PyObject *baseline = PyList_New(num_cells);
+	PyObject *c0 = PyList_New(num_cells);
+	PyObject *c1 = PyList_New(num_cells);
+	PyObject *c2 = PyList_New(num_cells);
+	for ( int c=0; c<num_cells; c++ ) {
+		PyList_SetItem(baseline, c, Py_BuildValue("d", prof->baseline[c]));
+		PyList_SetItem(c0, c, Py_BuildValue("d", prof->c0[c]));
+		PyList_SetItem(c1, c, Py_BuildValue("d", prof->c1[c]));
+		PyList_SetItem(c2, c, Py_BuildValue("d", prof->c2[c]));
+	}
+	PyDict_SetItemString(ret, "baseline", baseline);
+	PyDict_SetItemString(ret, "c0", c0);
+	PyDict_SetItemString(ret, "c1", c1);
+	PyDict_SetItemString(ret, "c2", c2);
+	return ret;
+}
+
+static PyObject *
 Skin_get_state(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	//DEBUGMSG("Skin_get_state()");
 	skincell_t *state;
@@ -225,6 +256,28 @@ Skin_get_state(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 		}
 		PyList_SetItem(ret, p, patch_list);
 	}
+	free(state);
+	return ret;
+}
+
+static PyObject *
+Skin_get_patch_state(SkinObject *self, PyObject *args) {
+	//DEBUGMSG("Skin_get_state()");
+	int patch;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		WARNING("Skin_get_patch_state() could not parse argument");
+		return NULL;
+	}
+
+	const int num_cells = self->skin.layout.patch[patch].num_cells;
+	skincell_t *state;
+	ALLOCN(state, num_cells);
+	skin_get_patch_state(&self->skin, patch, state);
+	PyObject *ret = PyList_New(num_cells);
+	for ( int c=0; c<num_cells; c++ ) {
+		PyList_SetItem(ret, c, Py_BuildValue("d", state[c]));
+	}
+	free(state);
 	return ret;
 }
 
@@ -277,7 +330,9 @@ static PyMethodDef Skin_methods[] = {
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
-	{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of the entire octocan" },
+	{ "get_patch_profile", (PyCFunction)Skin_get_patch_profile, METH_VARARGS, "Gets calibration settings for a specific patch" },
+	{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of all patches" },
+	{ "get_patch_state", (PyCFunction)Skin_get_patch_state, METH_VARARGS, "Gets current state of a specific patch" },
 	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
 	{ "get_layout", (PyCFunction)Skin_get_layout, METH_NOARGS, "Gets skin device layout of patches and cells" },
 	{ NULL }
