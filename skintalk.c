@@ -564,13 +564,11 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 	//p.magnitude = p.magnitude < 0 ? -p.magnitude : p.magnitude;
 	if ( sum < 0 ) {
 		sum = -sum;
-	} else if ( sum == 0.0 ) {
-		sum = 1;
 	}
 	
 	struct patch_layout *pl = &skin->layout.patch[patch];
 	for ( int c=0; c<pl->num_cells; c++ ) {
-		const double norm = state[c]/sum;
+		const double norm = sum == 0 ? 0 : state[c]/sum;
 		p.x += norm*pl->x[c];
 		p.y += norm*pl->y[c];
 	}

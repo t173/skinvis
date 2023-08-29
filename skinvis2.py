@@ -95,7 +95,6 @@ def setup_octocan():
     sensor = skin.Skin(device=device, layout=cmdline.layout)
     sensor.set_alpha(cmdline.alpha)
     sensor.set_pressure_alpha(cmdline.pressure_alpha)
-    breakpoint()
     if cmdline.profile:
         sensor.read_profile(cmdline.profile)
     return sensor
