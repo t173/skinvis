@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 from matplotlib.patches import Polygon
-from matplotlib.widgets import TextBox
+from matplotlib.widgets import Button, TextBox
 from scipy.spatial import Voronoi
 
 import skin
@@ -53,7 +53,7 @@ def parse_cmdline():
     parser.add_argument('--profile', metavar='CSVFILE', default='profile.csv', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
-    parser.add_argument('--delay', type=float, default=30, help='delay between plot updates in milliseoncds')
+    parser.add_argument('--delay', type=float, default=0, help='delay between plot updates in milliseoncds')
     parser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
     parser.add_argument('--noconfigure', action='store_true', help='do not configure serial')
     cmdline = parser.parse_args()
@@ -181,14 +181,19 @@ def anim_init(sensor, patch):
 
     heat_rows = 6
     cellline_rows = 1
-    fig = plt.figure(constrained_layout=False, figsize=(3, 0.4*(heat_rows + cellline_rows*num_cells)), facecolor='lightgray')
+    button_rows = 1
+    fig = plt.figure(constrained_layout=False, figsize=(3, 0.4*(heat_rows + cellline_rows*num_cells + button_rows)), facecolor='lightgray')
     gs = fig.add_gridspec(
-        nrows=heat_rows + num_cells*cellline_rows, ncols=1,
+        nrows=heat_rows + num_cells*cellline_rows + button_rows, ncols=1,
         hspace=0, wspace=0, right=0.85,
         left=0.1, top=0.95, bottom=0.05,
     )
     heat = fig.add_subplot(gs[:heat_rows, 0])
     cell_ax = [fig.add_subplot(gs[heat_rows + i*cellline_rows, 0]) for i in range(num_cells)]
+    tare_ax = fig.add_subplot(gs[-button_rows, 0])
+    tare_button = Button(tare_ax, 'Tare')
+    tare_button.label.set_fontsize(14)
+    tare_button.on_clicked(lambda _: calibrate(sensor))
 
     # textbox_axs = [fig.add_subplot(gs[heat_rows + i*cellline_rows, 1]) for i in range(num_cells)]
     # calib = sensor.get_patch_profile(patch)
@@ -240,6 +245,7 @@ def anim_init(sensor, patch):
                        labelbottom=False, labeltop=False)
         ax.set_ylabel(str(i), color='dimgray', rotation=0, ha='center', va='center', labelpad=10)
         line, = ax.plot(np.arange(cmdline.history), history[i, :], color='k')
+        ax.set_xlim(0, cmdline.history)
         cell_lines.append(line)
 
     args = {
@@ -253,6 +259,7 @@ def anim_init(sensor, patch):
         'cell_to_poly': cell_to_poly,
         'history': history,
         'history_pos': history_pos,
+        'tare': tare_button,
         #'textboxes': textboxes,
     }
     return fig, args
@@ -274,10 +281,18 @@ def anim_update(frame, args):
     args['history'][:, args['history_pos']] = state
     args['collection'].set_array(state)
 
+    pos = (args['history_pos'] + 1) % cmdline.history
     for c in range(len(args['cell_lines'])):
+        h = args['history'][c, :]
         line = args['cell_lines'][c]
         xdata, ydata = line.get_data()
-        line.set_data(xdata, args['history'][c, :])
+        line.set_data(xdata, np.hstack([h[pos:], h[:pos]]))
+        hmin = h.min()
+        hmax = h.max()
+        if hmin == hmax:
+            hmin -= 100
+            hmax += 100
+        args['cell_ax'][c].set_ylim(hmin, hmax)
 
     global total_frames
     total_frames += 1
@@ -303,11 +318,11 @@ def main():
     fig, args = anim_init(sensor, cmdline.patch)
     anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, fargs=(args,), interval=cmdline.delay)
     
-    plt.figure(figsize=(1,1))
-    ax = plt.axes()
-    button = mpl.widgets.Button(ax, 'Tare')
-    button.label.set_fontsize(24)
-    button.on_clicked(lambda _: calibrate(sensor))
+    # plt.figure(figsize=(1,1))
+    # ax = plt.axes()
+    # button = Button(ax, 'Tare')
+    # button.label.set_fontsize(24)
+    # button.on_clicked(lambda _: calibrate(sensor))
 
     sensor.start()
     if not cmdline.nocalibrate:
