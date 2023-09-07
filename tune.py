@@ -133,9 +133,9 @@ def stats_updater(sensor, view, sleep=2):
         misalign_before = misalign_now
         before = now
 
-def tessellate(sensor):
+def tessellate(sensor, patch):
     layout = sensor.get_layout()
-    pl = layout[cmdline.patch]
+    pl = layout[patch]
     cell_ids = np.array(list(pl.keys()))
     cell_pos = np.array([pl[c] for c in cell_ids])
     points = cell_pos
@@ -177,7 +177,7 @@ def textbox_submit(sensor, patch, cell, text):
 def anim_init(sensor, patch):
     patch_layout = sensor.get_layout()[patch]
     num_cells = len(patch_layout)
-    cell_to_poly, lims = tessellate(sensor)
+    cell_to_poly, lims = tessellate(sensor, patch)
 
     heat_rows = 6
     cellline_rows = 1
@@ -315,7 +315,8 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
-    fig, args = anim_init(sensor, cmdline.patch)
+    # User side patch numbers start with 1
+    fig, args = anim_init(sensor, cmdline.patch - 1)
     anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, fargs=(args,), interval=cmdline.delay)
     
     # plt.figure(figsize=(1,1))
