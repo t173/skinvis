@@ -85,21 +85,22 @@ get_time(struct timespec *dst)
 static void
 transmit_char(int fd, char code)
 {
-	fd_set set;
-	static struct timeval timeout = {
-		.tv_sec = 3,
-		.tv_usec = 0
-	};
-	int ret;
-	FD_ZERO(&set);
-	FD_SET(fd, &set);
+	/* fd_set set; */
+	/* static struct timeval timeout = { */
+	/* 	.tv_sec = 3, */
+	/* 	.tv_usec = 0 */
+	/* }; */
+	/* int ret; */
+	/* FD_ZERO(&set); */
+	/* FD_SET(fd, &set); */
 
-	ret = select(1, NULL, &set, NULL, &timeout);
-	if ( ret < 0 ) {
-		FATAL("select(2) error: %s", strerror(errno));
-	} else if ( ret == 0 ) {
-		WARNING("Timed out while writing to device");
-	} else if ( write(fd, &code, 1) < 0 ) {
+	/* ret = select(1, NULL, &set, NULL, &timeout); */
+	/* if ( ret < 0 ) { */
+	/* 	FATAL("select(2) error: %s", strerror(errno)); */
+	/* } else if ( ret == 0 ) { */
+	/* 	WARNING("Timed out while writing to device"); */
+	/* } else */
+	if ( write(fd, &code, 1) < 0 ) {
 		WARNING("Cannot write to device");
 	}
 }
@@ -187,7 +188,7 @@ skin_init(struct skin *skin, const char *device, int patches, int cells)
 	skin->debuglog = NULL;
 
 	// Open device
-	if ( (skin->device_fd = open(skin->device, O_RDWR)) < 0 ) {
+	if ( (skin->device_fd = open(skin->device, O_RDWR | O_NONBLOCK)) < 0 ) {
 		WARNING("Cannot open device: %s", skin->device);
 		return 0;
 	}
