@@ -510,10 +510,14 @@ skin_calibrate_stop(struct skin *skin)
 	int warned = 0;
 	pthread_mutex_lock(&skin->lock);
 	skin->calibrating = 0;
-	for ( int p=0; p < skin->num_patches; p++ ) {
-		for ( int c=0; c < skin->num_cells; c++ ) {
-			const int i = get_bucket(skin, p, c);
+	const struct layout *lo = &skin->layout;
+	for ( int p=0; p < lo->num_patches; p++ ) {
+		const struct patch_layout *pl = &lo->patch[p];
+		const int patch_id = pl->patch_id;
+		for ( int c=0; c < pl->num_cells; c++ ) {
+			const int cell_id = pl->cell_id[c];
 			skincell_t value = 0;
+			const int i = skin->idx[patch_id][cell_id];
 			if ( skin->calib_count[i] > 0 ) {
 				value = skin->calib_sum[i]/skin->calib_count[i];
 			} else {
@@ -522,8 +526,8 @@ skin_calibrate_stop(struct skin *skin)
 					warned = 1;
 				}
 			}
-			profile_set_baseline(&skin->profile, p, c, value);
-			EVENT(skin, "baseline", "%d.%d=%d", p, c, profile_baseline(skin->profile, p, c));
+			profile_set_baseline(&skin->profile, patch_id, cell_id, value);
+			EVENT(skin, "baseline", "%d.%d=%d", patch_id, cell_id, profile_baseline(skin->profile, patch_id, cell_id));
 		}
 	}
 	free(skin->calib_sum);
@@ -578,7 +582,7 @@ skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)
 int
 skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 {
-	const int num_cells = skin->num_cells;
+	const int num_cells = skin->total_cells;
 	skincell_t state[num_cells];
 	struct skin_pressure p = {};
 	skin_get_patch_state(skin, patch, state);
@@ -612,17 +616,20 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 
 
 enum addr_check
-address_check(struct skin *skin, int patch, int cell);
+address_check(struct skin *skin, int patch, int cell)
 {
-	if ( patch > skin->layout.max_patch_id )
+	const struct layout *lo = &skin->layout;
+	if ( patch < 0 || patch > lo->max_patch_id )
 		return ADDR_PATCH_OOR;
-	if ( skin->layout.patch_idx[patch] < 0 )
+	if ( lo->patch_idx[patch] < 0 )
 		return ADDR_PATCH_INV;
 
-	struct patch_layout *pl = &skin->layout.patch[lo->patch_idx[patch]];
-	if ( cell > pl->max_cell_id )
+	struct patch_layout *pl = &lo->patch[lo->patch_idx[patch]];
+	if ( cell < 0 || cell > pl->max_cell_id )
 		return ADDR_CELL_OOR;
-	if ( 
+	if ( skin->idx[patch][cell] < 0 )
+		return ADDR_CELL_INV;
+	return ADDR_VALID;
 }
 
 //EOF

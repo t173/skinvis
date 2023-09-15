@@ -19,7 +19,7 @@ struct patch_layout {
 	int patch_id;   // patch ID
 	int num_cells;  // number of cells this patch
   
-	int *cell_id;   // cell IDs
+	int *cell_id;   // cell IDs, size num_cells
 	int max_cell_id;
 
 	double *x, *y;  // x,y positions of cells
