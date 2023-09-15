@@ -61,6 +61,7 @@ layout_read(struct layout *lo, const char *csvfile)
 	}
 
 	lo->csvfile = csvfile;
+	lo->max_patch_id = 0;
 
 	enum {
 		S_INIT=0,    // number of patches expected
@@ -94,10 +95,10 @@ layout_read(struct layout *lo, const char *csvfile)
 				}
 				if ( col == 1 ) {
 					patch_id = get_long(tok);
+					lo->max_patch_id = MAX(patch_id, lo->max_patch_id);
 				} else if ( col == 2 ) {
 					num_cells = get_long(tok);
 					current = &lo->patch[current_patch];
-					lo->max_cells_per_patch = MAX(num_cells, lo->max_cells_per_patch);
 					patch_layout_init(current, patch_id, num_cells);
 					current_cell = 0;
 					state = S_CELL_ID;
@@ -108,6 +109,7 @@ layout_read(struct layout *lo, const char *csvfile)
 			} else if ( state == S_CELL_ID ) {
 				if ( col == 1 ) {
 					current->cell_id[current_cell] = get_long(tok);
+					lo->total_cells++;
 				} else if ( col == 2 ) {
 					const double x = get_double(tok);
 					current->x[current_cell] = x;
@@ -140,6 +142,16 @@ layout_read(struct layout *lo, const char *csvfile)
 			}
 		}  // each token
 	}  // each line
+
+	// Build map of patch_id to index of lo->patch (<0 invalid)
+	ALLOCN(lo->patch_idx, lo->max_patch_id);
+	for ( int i=0; i<lo->max_patch_id; i++ ) {
+		lo->patch_idx[i] = -1;
+	}
+	for ( int p=0, pidx=0; p<lo->num_patches; p++ ) {
+		lo->patch_idx[lo->patch[p].patch_id] = pidx++;
+	}
+
 	free(line);
 	fclose(f);
 	return current_patch;
@@ -153,9 +165,8 @@ layout_read(struct layout *lo, const char *csvfile)
 void
 layout_init(struct layout *lo, int num_patches)
 {
-	lo->csvfile = NULL;
+	memset(lo, 0, sizeof(*lo));
 	lo->num_patches = num_patches;
-	lo->max_cells_per_patch = 0;
 	ALLOCN(lo->patch, num_patches);
 }
 
@@ -167,6 +178,18 @@ layout_free(struct layout *lo)
 			patch_layout_free(&lo->patch[p]);
 		}
 		free(lo->patch);
+		free(lo->patch_idx);
+	}
+}
+
+struct patch_layout *
+get_patch_layout(struct layout *lo, int patch)
+{
+    const int index = lo->patch_idx[patch];
+	if ( index < 0 ) {
+		return NULL;
+	} else {
+		return &lo->patch[index];
 	}
 }
 
@@ -191,4 +214,5 @@ patch_layout_free(struct patch_layout *pl)
 		free(pl->y);
 	}
 }
+
 //EOF

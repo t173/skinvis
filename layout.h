@@ -8,8 +8,11 @@
 struct layout {
 	const char *csvfile;
 	int num_patches;
-	int max_cells_per_patch;
+	int total_cells;
 	struct patch_layout *patch;  // array of size num_patches
+
+	int max_patch_id;
+	int *patch_idx;  // map patch ID to index of *patch
 };
 
 struct patch_layout {
@@ -17,6 +20,8 @@ struct patch_layout {
 	int num_cells;  // number of cells this patch
   
 	int *cell_id;   // cell IDs
+	int max_cell_id;
+
 	double *x, *y;  // x,y positions of cells
 	double xmin, xmax;
 	double ymin, ymax;
@@ -41,8 +46,9 @@ int layout_read(struct layout *lo, const char *csvfile);
 void layout_init(struct layout *lo, int num_patches);
 void layout_free(struct layout *lo);
 
+struct patch_layout *get_patch_layout(struct layout *lo, int patch);
+
 void patch_layout_init(struct patch_layout *pl, int id, int num_cells);
 void patch_layout_free(struct patch_layout *pl);
-
 
 #endif // LAYOUT_H_

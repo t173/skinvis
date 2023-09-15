@@ -20,16 +20,28 @@ struct skin_pressure {
 	double x, y;
 };
 
+enum addr_check {
+	ADDR_VALID=0,   // valid address
+	ADDR_PATCH_OOR, // patch ID is out of range
+	ADDR_PATCH_INV, // patch ID not in layout
+	ADDR_CELL_OOR,  // cell ID is out of range
+	ADDR_CELL_INV,  // cell ID is not in layout
+
+	ADDR_LENGTH,    // (reserved for max value)
+};
+
 // Management of a skin sensor device
 struct skin {
 	int num_patches;         // number of sensor patches
-	int num_cells;           // max number of tactile sensors per patch
-	skincell_t *value;       // array of cell values
-	double alpha;            // alpha value for exponential averaging
+	int total_cells;         // total number of tactile sensors on device
 
 	struct profile profile;  // dynamic range calibration profile
 	struct layout layout;    // layout of cells in patches
 
+	skincell_t *value;       // array of cell values
+	int **idx;               // map of [patch][cell] IDs to value[] index
+
+	double alpha;            // alpha for exponential averaging of values
 	double pressure_alpha;   // alpha for smoothing presure calculations
 	struct skin_pressure *pressure;
 
@@ -50,17 +62,13 @@ struct skin {
 	int *calib_count;        // batch count while calibrating
 
 	// Performance statistics
-	long long total_bytes;     // odometer of bytes read from device
-	long long total_records;   // number of records correctly parsed
-	long long dropped_records; // invalid records dropped
-	long long misalignments;   // misalignment advances
+	long total_bytes;   // odometer of bytes read from device
+	long misalignments;
+	long addr_tally[ADDR_LENGTH]; // tally of records by addr_check 
 };
 
-// Get value of cell c from patch p of struct skin *s
-#define skin_cell(s, p, c) ((s)->value[(p)*((s)->num_cells) + (c)])
-
-int skin_init_octocan(struct skin *skin);
-int skin_init(struct skin *skin, const char *device, int patches, int cells);
+//int skin_init_octocan(struct skin *skin);
+//int skin_init(struct skin *skin, const char *device, int patches, int cells);
 int skin_from_layout(struct skin *skin, const char *device, const char *lofile);
 void skin_free(struct skin *skin);
 int skin_start(struct skin *skin);
@@ -93,5 +101,8 @@ int skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst);
 
 //int skin_get_pressure(struct skin *skin, struct skin_pressure *dst);
 int skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst);
+
+enum addr_check address_check(struct skin *skin, int patch, int cell);
+
 
 #endif // SKINTALK_H_

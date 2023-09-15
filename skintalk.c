@@ -23,15 +23,6 @@
 #include "profile.h"
 #include "layout.h"
 
-// (x,y) position of each cell on octocan
-// Based on order [[ 8, 10, 13, 15], [ 9, 11, 12, 14], [ 1, 3, 4, 6], [ 0, 2, 5, 7]]
-//double skincell_posx[] = {-1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5, -1.5, -1.5, -0.5, -0.5,  0.5,  0.5,  1.5,  1.5};
-//double skincell_posy[] = { 1.5,  0.5,  1.5,  0.5,  0.5,  1.5,  0.5,  1.5, -1.5, -0.5, -1.5, -0.5, -0.5, -1.5, -0.5, -1.5};
-//#define POSX_MIN -1.5
-//#define POSX_MAX  1.5
-//#define POSY_MIN -1.5
-//#define POSY_MAX  1.5
-
 #define STOP_CODE   '0'  // stop octocan
 #define START1_CODE '1'  // start with original protocol
 #define START2_CODE '2'  // start, but including sequence numbers
@@ -65,6 +56,9 @@ struct skin_record {
 	short cell;
 	int32_t value;
 };
+
+// Get cell c from patch p of struct skin *s
+#define skin_cell(s, p, c) ( (s)->value[(s)->idx[(p)][(c)]] )
 
 static void
 exp_avg(double *dst, double value, double alpha)
@@ -163,37 +157,37 @@ read_bytes(struct skin *skin, void *dst, size_t count)
 
 //--------------------------------------------------------------------
 
-int
-skin_init_octocan(struct skin *skin)
-{
-	return skin_init(skin, "/dev/octocan", 8, 16);
-}
+/* int */
+/* skin_init_octocan(struct skin *skin) */
+/* { */
+/* 	return skin_init(skin, "/dev/octocan", 8, 16); */
+/* } */
 
-int
-skin_init(struct skin *skin, const char *device, int patches, int cells)
-{
-	DEBUGMSG("skin_init()");
-	if ( !skin )
-		return 0;
-	memset(skin, 0, sizeof(*skin));
-	skin->num_patches = patches;
-	skin->num_cells = cells;
-	skin->device = device;
-	skin->alpha = 1.0;
-	skin->pressure_alpha = 0.5;
-	profile_init(&skin->profile);
-	ALLOCN(skin->value, patches*cells);
-	ALLOCN(skin->pressure, patches);
-	skin->log = NULL;
-	skin->debuglog = NULL;
+/* int */
+/* skin_init(struct skin *skin, const char *device, int patches, int cells) */
+/* { */
+/* 	DEBUGMSG("skin_init()"); */
+/* 	if ( !skin ) */
+/* 		return 0; */
+/* 	memset(skin, 0, sizeof(*skin)); */
+/* 	skin->num_patches = patches; */
+/* 	skin->total_cells = patches*cells; */
+/* 	skin->device = device; */
+/* 	skin->alpha = 1.0; */
+/* 	skin->pressure_alpha = 0.5; */
+/* 	profile_init(&skin->profile); */
+/* 	ALLOCN(skin->value, patches*cells); */
+/* 	ALLOCN(skin->pressure, patches); */
+/* 	skin->log = NULL; */
+/* 	skin->debuglog = NULL; */
 
-	// Open device
-	if ( (skin->device_fd = open(skin->device, O_RDWR | O_NONBLOCK)) < 0 ) {
-		WARNING("Cannot open device: %s", skin->device);
-		return 0;
-	}
-	return 1;
-}
+/* 	// Open device */
+/* 	if ( (skin->device_fd = open(skin->device, O_RDWR | O_NONBLOCK)) < 0 ) { */
+/* 		WARNING("Cannot open device: %s", skin->device); */
+/* 		return 0; */
+/* 	} */
+/* 	return 1; */
+/* } */
 
 int
 skin_from_layout(struct skin *skin, const char *device, const char *lofile)
@@ -211,12 +205,31 @@ skin_from_layout(struct skin *skin, const char *device, const char *lofile)
 		return 0;
 
 	skin->num_patches = skin->layout.num_patches;
-	skin->num_cells = skin->layout.max_cells_per_patch;
-
-	ALLOCN(skin->value, skin->num_patches*skin->num_cells);
 	ALLOCN(skin->pressure, skin->num_patches);
 	skin->log = NULL;
 	skin->debuglog = NULL;
+
+	// Build indexing map (physical addr -> array index)
+	ALLOCN(skin->idx, skin->layout.max_patch_id);
+	int count = 0;
+	for ( int p=0; p < skin->num_patches; p++ ) {
+		const struct patch_layout *pl = &skin->layout.patch[p];
+		ALLOCN(skin->idx[pl->patch_id], pl->max_cell_id);
+
+		// Sentinel value <0 for "unused"
+		for ( int i=0; i < pl->max_cell_id; i++ ) {
+			skin->idx[pl->patch_id][i] = -1;
+		}
+		for ( int i=0; i < pl->num_cells; i++ ) {
+			skin->idx[pl->patch_id][pl->cell_id[i]] = count++;
+		}
+	}
+
+	skin->total_cells = count;
+	ALLOCN(skin->value, count);
+	if ( skin->layout.total_cells != count ) {
+		WARNING("Layout reports %d cells instead of %d", skin->layout.total_cells, count);
+	}
 
 	// Open device
 	if ( (skin->device_fd = open(skin->device, O_RDWR)) < 0 ) {
@@ -233,9 +246,14 @@ skin_free(struct skin *skin)
 	if ( !skin ) {
 		return;
 	}
+	for ( int p=0; p < skin->num_patches; p++ ) {
+		free(skin->idx[skin->layout.patch[p].patch_id]);
+	}
+	free(skin->idx);
 	free(skin->value);
 	free(skin->pressure);
 	profile_free(&skin->profile);
+	layout_free(&skin->layout);
 }
 
 void
@@ -244,12 +262,11 @@ write_csv_header(struct skin *skin)
 	if ( !skin || !skin->log )
 		return;
 
-	// Note: internal patch numbers start at 0, external (device/user)
-	// start at 1, so here we write 1-based patch numbers
 	fprintf(skin->log, "time");
 	for ( int p=0; p < skin->num_patches; p++ ) {
-		for ( int c=0; c < skin->num_cells; c++ ) {
-			fprintf(skin->log, ",patch%d_cell%d", p + 1, c);
+		const int patch_id = skin->layout.patch[p].patch_id;
+		for ( int c=0; c < skin->layout.patch[p].num_cells; c++ ) {
+			fprintf(skin->log, ",patch%d_cell%d", patch_id, skin->layout.patch[p].cell_id[c]);
 		}
 	}
 	fprintf(skin->log, "\n");
@@ -265,7 +282,7 @@ write_csv_row(struct skin *skin)
 	get_time(&now);
 	fprintf(skin->log, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
-		for ( int c=0; c < skin->num_cells; c++ ) {
+		for ( int c=0; c < skin->layout.patch[p].num_cells; c++ ) {
 			fprintf(skin->log, ",%g", skin_cell(skin, p, c));
 		}
 	}
@@ -274,12 +291,6 @@ write_csv_row(struct skin *skin)
 }
 
 //--------------------------------------------------------------------
-
-static inline int
-get_bucket(struct skin *skin, int patch, int cell)
-{
-	return patch*skin->num_cells + cell;
-}
 
 static skincell_t
 scale_value(struct skin *skin, int patch, int cell, int32_t rawvalue)
@@ -301,7 +312,7 @@ void
 skin_cell_write(struct skin *skin, int patch, int cell, int32_t rawvalue)
 {
 	if ( skin->calibrating ) {
-		const int i = get_bucket(skin, patch, cell);
+		const int i = skin->idx[patch][cell];
 		//pthread_mutex_lock(&skin->lock);
 		skin->calib_sum[i] += rawvalue;
 		skin->calib_count[i]++;
@@ -351,19 +362,34 @@ skin_reader(void *args)
 		}
 
 		get_record(&record, buffer + pos);
-		skin->total_records++;
 		pos += RECORD_SIZE;
-
 		EVENT(skin, "parse", "%d.%d=%d", record.patch, record.cell, record.value);
-		if ( record.patch >= skin->num_patches || record.cell >= skin->num_cells ) {
-			EVENT(skin, "drop", "%d.%d", record.patch, record.cell);
-			skin->dropped_records++;
+
+		enum addr_check chk = address_check(skin, record.patch, record.cell);
+		skin->addr_tally[chk]++;
+		switch ( chk ) {
+		case ADDR_VALID:
+		default:
+			break;
+		case ADDR_PATCH_OOR:
+			EVENT(skin, "patch out of range", "%d", record.patch);
+			continue;
+		case ADDR_PATCH_INV:
+			EVENT(skin, "patch invalid", "%d", record.patch);
+			continue;
+		case ADDR_CELL_OOR:
+			EVENT(skin, "cell out of range", "%d", record.cell);
+			continue;
+		case ADDR_CELL_INV:
+			EVENT(skin, "cell invalid", "%d", record.cell);
 			continue;
 		}
 		skin_cell_write(skin, record.patch, record.cell, record.value);
 
 		// Append to log if last column for CSV row
-		if ( skin->log && !skin->calibrating && record.patch == skin->num_patches - 1 && record.cell == skin->num_cells - 1 ) {
+		if ( skin->log && !skin->calibrating
+			 && record.patch == skin->layout.max_patch_id
+			 && record.cell == skin->layout.patch[skin->layout.patch_idx[record.patch]].max_cell_id ) {
 			//pthread_mutex_lock(&skin->lock);
 			write_csv_row(skin);
 			//pthread_mutex_unlock(&skin->lock);
@@ -471,8 +497,8 @@ skin_calibrate_start(struct skin *skin)
 	}
 	pthread_mutex_lock(&skin->lock);
 	skin->calibrating = 1;
-	ALLOCN(skin->calib_sum, skin->num_patches*skin->num_cells);
-	ALLOCN(skin->calib_count, skin->num_patches*skin->num_cells);
+	ALLOCN(skin->calib_sum, skin->total_cells);
+	ALLOCN(skin->calib_count, skin->total_cells);
 	profile_tare(&skin->profile);
 	pthread_mutex_unlock(&skin->lock);
 }
@@ -534,7 +560,7 @@ int
 skin_get_state(struct skin *skin, skincell_t *dst)
 {
 	pthread_mutex_lock(&skin->lock);
-	memcpy(dst, skin->value, skin->num_patches*skin->num_cells*sizeof(*skin->value));
+	memcpy(dst, skin->value, skin->total_cells*sizeof(*skin->value));
 	pthread_mutex_unlock(&skin->lock);
 	return skin->num_patches;
 }
@@ -584,10 +610,19 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 	return 1;
 }
 
-/* int */
-/* skin_get_pressure(struct skin *skin, struct skin_pressure *dst) */
-/* { */
-/* 	return 1; */
-/* } */
+
+enum addr_check
+address_check(struct skin *skin, int patch, int cell);
+{
+	if ( patch > skin->layout.max_patch_id )
+		return ADDR_PATCH_OOR;
+	if ( skin->layout.patch_idx[patch] < 0 )
+		return ADDR_PATCH_INV;
+
+	struct patch_layout *pl = &skin->layout.patch[lo->patch_idx[patch]];
+	if ( cell > pl->max_cell_id )
+		return ADDR_CELL_OOR;
+	if ( 
+}
 
 //EOF
