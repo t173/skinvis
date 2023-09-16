@@ -108,7 +108,9 @@ layout_read(struct layout *lo, const char *csvfile)
 				}
 			} else if ( state == S_CELL_ID ) {
 				if ( col == 1 ) {
-					current->cell_id[current_cell] = get_long(tok);
+					const int cell_id = get_long(tok);
+					current->cell_id[current_cell] = cell_id;
+					current->max_cell_id = MAX(cell_id, current->max_cell_id);
 					lo->total_cells++;
 				} else if ( col == 2 ) {
 					const double x = get_double(tok);

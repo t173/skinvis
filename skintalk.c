@@ -572,9 +572,12 @@ skin_get_state(struct skin *skin, skincell_t *dst)
 int
 skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)
 {
-	int num_cells = skin->layout.patch[patch].num_cells;
+	const struct patch_layout *pl = &skin->layout.patch[skin->layout.patch_idx[patch]];
+
 	pthread_mutex_lock(&skin->lock);
-	memcpy(dst, skin->value + patch*num_cells, num_cells*sizeof(*skin->value));
+	for ( int c=0; c < pl->num_cells; c++ ) {
+		dst[c] = skin_cell(skin, patch, pl->cell_id[c]);
+	}
 	pthread_mutex_unlock(&skin->lock);
 	return 1;
 }

@@ -49,7 +49,7 @@ def parse_cmdline():
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
-    parser.add_argument('--patch', type=int, default=1)
+    parser.add_argument('--patch', '-p', type=int, default=1)
     parser.add_argument('--profile', metavar='CSVFILE', default='profile.csv', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
@@ -98,9 +98,12 @@ def stats_updater(sensor, view, sleep=2):
     bytes_before = sensor.total_bytes
     records_before = sensor.total_records
     before = datetime.datetime.now()
-    num_cells = sensor.patches*sensor.cells
+    num_cells = sensor.total_cells
     frames_before = total_frames
-    dropped_before = sensor.dropped_records
+    def dropped_records():
+        tally = sensor.get_record_tally()
+        return tally['patch_outofrange'] + tally['cell_outofrange']
+    dropped_before = dropped_records()
     misalign_before = sensor.misalignments
     while not shutdown:
         time.sleep(sleep)
@@ -108,7 +111,7 @@ def stats_updater(sensor, view, sleep=2):
         bytes_now = sensor.total_bytes
         records_now = sensor.total_records
         frames_now = total_frames
-        dropped_now = sensor.dropped_records
+        dropped_now = dropped_records()
         misalign_now = sensor.misalignments
 
         time_delta = (now - before).total_seconds()
@@ -316,7 +319,7 @@ def main():
     stats_thread.start()
 
     # User side patch numbers start with 1
-    fig, args = anim_init(sensor, cmdline.patch - 1)
+    fig, args = anim_init(sensor, cmdline.patch)
     anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, fargs=(args,), interval=cmdline.delay)
     
     # plt.figure(figsize=(1,1))

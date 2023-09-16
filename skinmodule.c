@@ -19,7 +19,7 @@ typedef struct {
 
 struct skin skin_default = {
 	.num_patches = 1,
-	.num_cells = 16,
+	.total_cells = 16,
 	.device = "/dev/ttyUSB0"
 };
 
@@ -73,10 +73,10 @@ Skin_init(SkinObject *self, PyObject *args, PyObject *kw) {
 static PyMemberDef Skin_members[] = {
 	{ "device", T_STRING, offsetof(SkinObject, skin.device), 0, "interface device for skin sensor" },
 	{ "patches", T_INT, offsetof(SkinObject, skin.num_patches), 0, "number of sensor patches" },
-	{ "cells", T_INT, offsetof(SkinObject, skin.num_cells), 0, "number of cells per patch" },
+	{ "total_cells", T_INT, offsetof(SkinObject, skin.total_cells), 0, "total number of cells on device" },
 	{ "total_bytes", T_LONGLONG, offsetof(SkinObject, skin.total_bytes), 0, "odometer of bytes read from device" },
-	{ "total_records", T_LONGLONG, offsetof(SkinObject, skin.total_records), 0, "odometer of parsed records" },
-	{ "dropped_records", T_LONGLONG, offsetof(SkinObject, skin.dropped_records), 0, "count of dropped records" },
+	{ "total_records", T_LONGLONG, offsetof(SkinObject, skin.addr_tally[ADDR_VALID]), 0, "odometer of correctly parsed records" },
+	//{ "dropped_records", T_LONGLONG, offsetof(SkinObject, skin.dropped_records), 0, "count of dropped records" },
 	{ "misalignments", T_LONGLONG, offsetof(SkinObject, skin.misalignments), 0, "count of misalignment adjustments" },
 	{ NULL }
 };
@@ -149,24 +149,24 @@ Skin_calibrate_stop(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	return Py_None;
 }
 
-static PyObject *
-Skin_get_calibration(SkinObject *self, PyObject *args) {
-	int patch, cell;
-	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) {
-		return NULL;
-	}
-	// Patch numbers start at 1
-	if ( patch <= 0 || patch > self->skin.num_patches ) {
-		PyErr_SetString(PyExc_ValueError, "patch number out of range");
-		return NULL;
-	}
-	// Cell numbers start at 0
-	if ( cell < 0 || cell >= self->skin.num_cells ) {
-		PyErr_SetString(PyExc_ValueError, "cell number out of range");
-		return NULL;
-	}
-	return PyLong_FromLong((long)skin_get_calibration(&self->skin, patch, cell));
-}
+/* static PyObject * */
+/* Skin_get_calibration(SkinObject *self, PyObject *args) { */
+/* 	int patch, cell; */
+/* 	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) { */
+/* 		return NULL; */
+/* 	} */
+/* 	// Patch numbers start at 1 */
+/* 	if ( patch <= 0 || patch > self->skin.num_patches ) { */
+/* 		PyErr_SetString(PyExc_ValueError, "patch number out of range"); */
+/* 		return NULL; */
+/* 	} */
+/* 	// Cell numbers start at 0 */
+/* 	if ( cell < 0 || cell >= self->skin.num_cells ) { */
+/* 		PyErr_SetString(PyExc_ValueError, "cell number out of range"); */
+/* 		return NULL; */
+/* 	} */
+/* 	return PyLong_FromLong((long)skin_get_calibration(&self->skin, patch, cell)); */
+/* } */
 
 static PyObject *
 Skin_log(SkinObject *self, PyObject *args) {
@@ -238,27 +238,27 @@ Skin_get_patch_profile(SkinObject *self, PyObject *args) {
 	return ret;
 }
 
-static PyObject *
-Skin_get_state(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
-	//DEBUGMSG("Skin_get_state()");
-	skincell_t *state;
-	const int num_patches = self->skin.num_patches;
-	const int num_cells = self->skin.num_cells;
-	const int count = num_patches*num_cells;
-	ALLOCN(state, count);
-	skin_get_state(&self->skin, state);
-	PyObject *ret = PyList_New(num_patches);
-	for ( int p=0; p<num_patches; p++ ) {
-		PyObject *patch_list = PyList_New(num_cells);
-		for ( int c=0; c<num_cells; c++ ) {
-			PyObject *cell_value = Py_BuildValue("d", state[p*num_cells + c]);
-			PyList_SetItem(patch_list, c, cell_value);
-		}
-		PyList_SetItem(ret, p, patch_list);
-	}
-	free(state);
-	return ret;
-}
+/* static PyObject * */
+/* Skin_get_state(SkinObject *self, PyObject *Py_UNUSED(ignored)) { */
+/* 	//DEBUGMSG("Skin_get_state()"); */
+/* 	skincell_t *state; */
+/* 	const int num_patches = self->skin.num_patches; */
+/* 	const int num_cells = self->skin.num_cells; */
+/* 	const int count = num_patches*num_cells; */
+/* 	ALLOCN(state, count); */
+/* 	skin_get_state(&self->skin, state); */
+/* 	PyObject *ret = PyList_New(num_patches); */
+/* 	for ( int p=0; p<num_patches; p++ ) { */
+/* 		PyObject *patch_list = PyList_New(num_cells); */
+/* 		for ( int c=0; c<num_cells; c++ ) { */
+/* 			PyObject *cell_value = Py_BuildValue("d", state[p*num_cells + c]); */
+/* 			PyList_SetItem(patch_list, c, cell_value); */
+/* 		} */
+/* 		PyList_SetItem(ret, p, patch_list); */
+/* 	} */
+/* 	free(state); */
+/* 	return ret; */
+/* } */
 
 static PyObject *
 Skin_get_patch_state(SkinObject *self, PyObject *args) {
@@ -318,6 +318,17 @@ Skin_get_layout(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	return ret;
 }
 
+static PyObject *
+Skin_get_record_tally(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
+	PyObject *ret = PyDict_New();
+	PyDict_SetItemString(ret, "valid", PyLong_FromLong((long)self->skin.addr_tally[ADDR_VALID]));
+	PyDict_SetItemString(ret, "patch_outofrange", PyLong_FromLong((long)self->skin.addr_tally[ADDR_PATCH_OOR]));
+	PyDict_SetItemString(ret, "invalid_patch", PyLong_FromLong((long)self->skin.addr_tally[ADDR_PATCH_INV]));
+	PyDict_SetItemString(ret, "cell_outofrange", PyLong_FromLong((long)self->skin.addr_tally[ADDR_CELL_OOR]));
+	PyDict_SetItemString(ret, "invalid_cell", PyLong_FromLong((long)self->skin.addr_tally[ADDR_CELL_INV]));
+	return ret;
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -326,15 +337,16 @@ static PyMethodDef Skin_methods[] = {
 	{ "set_pressure_alpha", (PyCFunction)Skin_set_pressure_alpha, METH_VARARGS, "Sets alpha for pressure smoothing" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Start baseline calibration" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Stop baseline calibration" },
-	{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
+	//{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
 	{ "get_patch_profile", (PyCFunction)Skin_get_patch_profile, METH_VARARGS, "Gets calibration settings for a specific patch" },
-	{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of all patches" },
+	//{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of all patches" },
 	{ "get_patch_state", (PyCFunction)Skin_get_patch_state, METH_VARARGS, "Gets current state of a specific patch" },
 	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
 	{ "get_layout", (PyCFunction)Skin_get_layout, METH_NOARGS, "Gets skin device layout of patches and cells" },
+	{ "get_record_tally", (PyCFunction)Skin_get_record_tally, METH_NOARGS, "Gets tallies of valid and invalid records, based on error" },
 	{ NULL }
 };
 
