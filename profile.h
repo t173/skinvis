@@ -5,28 +5,30 @@
 #ifndef PROFILE_H_
 #define PROFILE_H_
 
-// Maximum number of patches supported
-#define PROFILE_MAXPATCHES  8
-
-// Maximum number of cells
-#define PROFILE_CELLS       16
-
 struct profile {
 	const char *csvfile;
-	struct patch_profile *patch[PROFILE_MAXPATCHES];
 	int num_patches;
+	struct patch_profile **patch;
+	size_t alloc;  // allocation size of *patch
+
+	int max_patch_id;
+	int *patch_idx;  // map match ID to index of *patch
 };
 
 struct patch_profile {
-	int id;  // patch ID
+	int patch_id;
 
+	int num_cells;
+	int max_cell_id;
+	int *cell_idx;  // map cell ID to index of below arrays
+	
 	// Baseline calibration
-	int baseline[PROFILE_CELLS];
+	int *baseline;
 
 	// Dynamic range calibration
-	double c0[PROFILE_CELLS];     // intercept
-	double c1[PROFILE_CELLS];     // linear coefficient
-	double c2[PROFILE_CELLS];     // quadratic coefficient
+	double *c0;     // intercept
+	double *c1;     // linear coefficient
+	double *c2;     // quadratic coefficient
 };
 
 // Get calibration value from struct profile prof
@@ -43,7 +45,7 @@ void profile_tare(struct profile *p);
 void profile_set_baseline(struct profile *p, int patch, int cell, double value);
 
 // Calibration profile
-void profile_init(struct profile *p);
+//void profile_init(struct profile *p);
 void profile_free(struct profile *p);
 
 #endif // PROFILE_H_

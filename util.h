@@ -23,8 +23,15 @@
 		if ( ( (dst) = malloc(sizeof(*(dst)))) == NULL ) \
 			FATAL("Cannot allocate %zd bytes", sizeof(*(dst))); } while (0)
 
+#define REALLOC(dst, sz) do {\
+		if ( ( (dst) = realloc((dst), (sz))) == NULL ) \
+			FATAL("Cannot reallocate %zd bytes", (sz)); } while (0)
+
 #define ALLOCN(dst, n) do {\
 		if ( ( (dst) = calloc((n), sizeof(*(dst))) ) == NULL ) \
 			FATAL("Cannot allocate %zd bytes", (n)*sizeof(*(dst))); } while (0)
+
+#define MIN(a,b) ( (a) <  (b) ? (a) : (b) )
+#define MAX(a,b) ( (a) >= (b) ? (a) : (b) )
 
 #endif /// UTIL_H_

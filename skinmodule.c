@@ -215,6 +215,37 @@ Skin_get_patch_profile(SkinObject *self, PyObject *args) {
 		WARNING("Skin_get_patch_profile() could not parse argument");
 		return NULL;
 	}
+	struct patch_profile *prof = skin_get_patch_profile(self->skin, patch);
+	const int num_cells = prof->num_cells;
+
+	PyObject *ret = PyDict_New();
+	PyDict_SetItemString(ret, "id", PyLong_FromLong((long)prof->id));
+
+	PyObject *baseline = PyList_New(num_cells);
+	PyObject *c0 = PyList_New(num_cells);
+	PyObject *c1 = PyList_New(num_cells);
+	PyObject *c2 = PyList_New(num_cells);
+	for ( int c=0; c<num_cells; c++ ) {
+		PyList_SetItem(baseline, c, Py_BuildValue("d", prof->baseline[c]));
+		PyList_SetItem(c0, c, Py_BuildValue("d", prof->c0[c]));
+		PyList_SetItem(c1, c, Py_BuildValue("d", prof->c1[c]));
+		PyList_SetItem(c2, c, Py_BuildValue("d", prof->c2[c]));
+	}
+	PyDict_SetItemString(ret, "baseline", baseline);
+	PyDict_SetItemString(ret, "c0", c0);
+	PyDict_SetItemString(ret, "c1", c1);
+	PyDict_SetItemString(ret, "c2", c2);
+	return ret;
+}
+
+static PyObject *
+Skin_get_cell_ids(SkinObject *self, PyObject *args) {
+	DEBUGMSG("Skin_get_patch_profile()");
+	int patch;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		WARNING("Skin_get_patch_profile() could not parse argument");
+		return NULL;
+	}
 	struct patch_profile *prof = self->skin.profile.patch[patch];
 	const int num_cells = self->skin.layout.patch[patch].num_cells;
 
@@ -262,14 +293,14 @@ Skin_get_patch_profile(SkinObject *self, PyObject *args) {
 
 static PyObject *
 Skin_get_patch_state(SkinObject *self, PyObject *args) {
-	//DEBUGMSG("Skin_get_state()");
+	DEBUGMSG("Skin_get_state()");
 	int patch;
 	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
 		WARNING("Skin_get_patch_state() could not parse argument");
 		return NULL;
 	}
 
-	const int num_cells = self->skin.layout.patch[patch].num_cells;
+	const int num_cells = self->skin.layout.patch[self->skin.layout.patch_idx[patch]].num_cells;
 	skincell_t *state;
 	ALLOCN(state, num_cells);
 	skin_get_patch_state(&self->skin, patch, state);

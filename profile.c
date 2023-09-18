@@ -12,6 +12,21 @@
 #include "util.h"
 #include "profile.h"
 
+#define PARSE_ERR(msg, ...) do { FATAL("line %d: " msg, line_num, ##__VA_ARGS__); } while (0)
+
+#define pp_cell_param(p, c, param) ( (p)->param[(p)->cell_idx[c]] )
+
+// Initial maximum patch or cell ID (doubles as needed)
+#define INITIAL_MAX_PATCH 4
+#define INITIAL_MAX_CELL 4
+#define INITIAL_PATCH_ALLOC 4
+
+static void profile_init(struct profile *p);
+static void profile_enlarge(struct profile *p, int new_max);
+static struct patch_profile *profile_get_patch(struct profile *p, int patch_id);
+static struct patch_profile *patch_profile_new(int patch_id, int max_cell);
+static struct patch_profile *patch_profile_enlarge(struct patch_profile *p, int new_max);
+
 static long
 get_long(const char *tok)
 {
@@ -36,16 +51,6 @@ get_double(const char *tok)
 	return ret;
 }
 
-static inline struct patch_profile *
-profile_patch_new(int id)
-{
-	struct patch_profile *p;
-	ALLOC(p);
-	memset(p, 0, sizeof(*p));
-	p->id = id;
-	return p;
-}
-
 int
 profile_read(struct profile *p, const char *csvfile)
 {
@@ -53,12 +58,12 @@ profile_read(struct profile *p, const char *csvfile)
 	char *line = NULL;
 	size_t len = 0;
 	ssize_t line_len;
-	int num_cols = 0;
-	int patch = 0;
-	int cell = 0;
+	int patch_id = 0;
+	int cell_id = 0;
 	const char *const DELIM = ",";
-	int patches_found = 0;
 	struct patch_profile *current = NULL;
+
+	static const char *headers[] = { "patch", "cell", "baseline", "c0", "c1", "c2", NULL };
 
 	if ( !(f = fopen(csvfile, "rt")) ) {
 		FATAL("Cannot open file: %s\n%s", csvfile, strerror(errno));
@@ -76,63 +81,63 @@ profile_read(struct profile *p, const char *csvfile)
 		int col = 0;
 		for ( char *tok = strtok(line, DELIM); tok; tok = strtok(NULL, DELIM), col++ ) {
 			if ( line_num == 1 ) {
-				// TODO: verify column order by checking headers
+				if ( !headers[col] || !strcmp(tok, headers[col]) ) {
+					PARSE_ERR("Column header mismatch, column %d: %s", col, tok);
+				}
 				continue;
 			}
 
 			switch ( col ) {
 			case 0:  // patch ID
-				patch = get_long(tok);
-
-				// Note patch IDs from file start at 1
-				if ( patch <= 0 || patch > PROFILE_MAXPATCHES ) {
-					FATAL("line %d: Invalid patch number %d (max supported %d)",
-								line_num, patch, PROFILE_MAXPATCHES);
+				patch_id = get_long(tok);
+				if ( patch_id < 0 ) {
+					PARSE_ERR("Invalid patch number %d", patch_id);
 				}
-				if ( !p->patch[patch - 1] ) {
-					p->patch[patch - 1] = profile_patch_new(patch);
-					patches_found++;
-				}
-				current = p->patch[patch - 1];
+				current = profile_get_patch(p, patch_id);
 				break;
 
 			case 1:  // cell ID
-				cell = get_long(tok);
-				if ( cell < 0 || cell >= PROFILE_CELLS ) {
-					FATAL("line %d: Invalid cell number %d", line_num, cell);
+				cell_id = get_long(tok);
+				if ( cell_id < 0 ) {
+					PARSE_ERR("Invalid cell number %d", cell_id);
+				}
+				
+				// Enlarge patch profile if needed
+				if ( cell_id >= current->max_cell_id ) {
+					patch_profile_enlarge(current, MAX(cell_id, 2*current->max_cell_id));
+				}
+
+				// Allocate cell index
+				if ( current->cell_idx[cell_id] < 0 ) {
+					current->cell_idx[cell_id] = current->num_cells++;
 				}
 				break;
 
 			case 2:  // baseline value
-				current->baseline[cell] = get_long(tok);
+				pp_cell_param(current, cell_id, baseline) = get_long(tok);
 				break;
 
 			case 3: // c0
-				current->c0[cell] = get_double(tok);
+				pp_cell_param(current, cell_id, c0) = get_double(tok);
 				break;
 
 			case 4: // c1
-				current->c1[cell] = get_double(tok);
+				pp_cell_param(current, cell_id, c1) = get_double(tok);
 				break;
 
 			case 5: // c2
-				current->c2[cell] = get_double(tok);
+				pp_cell_param(current, cell_id, c2) = get_double(tok);
 				break;
 
 			default:
-				FATAL("line %d: Too many columns, expected %d", line_num, num_cols);
+				PARSE_ERR("Too many columns");
 				break;
 			}
-		}
-
-		if ( line_num == 1 ) {
-			num_cols = col;
-		}
-	}
+		}  // column
+	}  // line
 	free(line);
 	fclose(f);
-	p->num_patches = patches_found;
-	return patches_found;
+	return p->num_patches;
 }
 
 void
@@ -145,27 +150,132 @@ profile_tare(struct profile *p)
 	}
 }
 
-void
+static void
 profile_init(struct profile *p)
 {
+	if ( !p ) return;
+	memset(p, 0, sizeof(p));
 	p->csvfile = NULL;
-	memset(p->patch, 0, sizeof(p->patch));
 	p->num_patches = 0;
+
+	// patch is array of pointers to struct patch_profile
+	ALLOCN(p->patch, INITIAL_PATCH_ALLOC);
+	p->alloc = INITIAL_PATCH_ALLOC;
+
+	// patch_idx maps (user) patch ID to index of patch[], or -1 if not used
+	const int max_patch_id = INITIAL_MAX_PATCH;
+	p->max_patch_id = max_patch_id;
+	ALLOCN(p->patch_idx, max_patch_id);
+	for ( int i=0; i < max_patch_id; i++ ) {
+		p->patch_idx[i] = -1;
+	}
+}
+
+static void
+profile_enlarge(struct profile *p, int new_max)
+{
+	if ( !p || new_max <= p->max_patch_id )
+		return;
+	REALLOC(p->patch, new_max);
+	REALLOC(p->patch_idx, new_max);
+	for ( int i=p->max_patch_id; i < new_max; i++ ) {
+		p->patch[i] = NULL;
+		p->patch_idx[i] = -1;
+	}
+	p->max_patch_id = new_max;
+}
+
+
+static struct patch_profile *
+patch_profile_new(int patch_id)
+{
+	struct patch_profile *p;
+	const int max_cell = INITIAL_MAX_CELL;
+	ALLOC(p);
+	memset(p, 0, sizeof(*p));
+	p->num_cells = 0;
+	p->patch_id = id;
+	p->max_cell_id = max_cell;
+	ALLOCN(p->cell_idx, max_cell);
+	ALLOCN(p->baseline, max_cell);
+	ALLOCN(p->c0, max_cell);
+	ALLOCN(p->c1, max_cell);
+	ALLOCN(p->c2, max_cell);
+	return p;
+}
+
+// Gets (or creates) patch_profile within a profile with the given patch_id
+static struct patch_profile *
+profile_get_patch(struct profile *p, int patch_id)
+{
+	struct patch_profile *ret;
+	
+	// Enable larger patch IDs if needed
+	if ( patch_id >= p->max_patch_id ) {
+		profile_enlarge(p, MAX(patch_id, 2*p->max_patch_id));
+	}
+
+	// Enlarge patch allocation if needed
+	if ( p->alloc >= p->num_patches ) {
+		p->alloc *= 2;
+		REALLOC(p->patch, p->alloc);
+	}
+
+	if ( p->patch_idx[patch_id] < 0 ) {
+		p->patch_idx[patch_id] = p->num_patches++;
+		p->patch[p->patch_idx[patch_id]] = patch_profile_new(patch_id);
+	}
+	return p->patch[p->patch_idx[patch_id]];
+}
+
+static struct patch_profile *
+patch_profile_enlarge(struct patch_profile *p, int new_max)
+{
+	if ( !p ) return NULL;
+	if ( new_max <= p->max_cell_id ) return p;
+	
+	REALLOC(p->cell_idx, new_max_cell);
+	REALLOC(p->baseline, new_max_cell);
+	REALLOC(p->c0, new_max_cell);
+	REALLOC(p->c1, new_max_cell);
+	REALLOC(p->c2, new_max_cell);
+	
+	for ( int i=p->max_cell_id; i < new_max; i++ ) {
+		p->cell_idx[i] = -1;
+	}
+	p->max_cell_id = new_max_cell;
+	return p;
+}
+
+static void
+patch_profile_free(struct patch_profile *p)
+{
+	if ( p ) {
+		free(p->patch[n].cell_idx);
+		free(p->patch[n].baseline);
+		free(p->patch[n].c0);
+		free(p->patch[n].c1);
+		free(p->patch[n].c2);
+		free(p->patch[n]);
+	}
 }
 
 void
 profile_free(struct profile *p)
 {
-	for ( int n=0; n < PROFILE_MAXPATCHES; n++ ) {
+	for ( int n=0; n < p->num_patches; n++ ) {
+		patch_profile_free(p->patch[n]);
 		free(p->patch[n]);
 	}
+	free(p->patch_idx);
+	free(p->patch);
 }
 
 void
 profile_set_baseline(struct profile *p, int patch, int cell, double value)
 {
 	if ( !p->patch[patch] ) {
-		p->patch[patch] = profile_patch_new(patch);
+		p->patch[patch] = patch_profile_new(patch);
 	}
 	p->patch[patch]->baseline[cell] = value;
 }

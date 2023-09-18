@@ -12,9 +12,6 @@
 #include "util.h"
 #include "layout.h"
 
-#define MIN(a,b) ( (a) <  (b) ? (a) : (b) )
-#define MAX(a,b) ( (a) >= (b) ? (a) : (b) )
-
 static long
 get_long(const char *tok)
 {

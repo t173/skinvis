@@ -550,6 +550,15 @@ skin_read_profile(struct skin *skin, const char *csv)
 	return ret;
 }
 
+struct patch_profile *
+skin_get_patch_profile(struct skin *skin, int patch)
+{
+	if ( !skin || patch < 0 || patch > skin->layout.max_patch_id ) {
+		return NULL;
+	}
+	return &lo->patch[lo->patch_idx[patch]];
+}
+
 skincell_t
 skin_get_calibration(struct skin *skin, int patch, int cell)
 {

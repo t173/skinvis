@@ -92,6 +92,8 @@ void skin_calibrate_stop(struct skin *skin);
 // Loads calibration profile from CSV file
 int skin_read_profile(struct skin *skin, const char *csv);
 
+struct patch_profile *skin_get_patch_profile(struct skin *skin, int patch);
+
 skincell_t skin_get_calibration(struct skin *skin, int patch, int cell);
 
 // Writes the latest state of all cells to dst. Values are (patch,
