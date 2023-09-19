@@ -20,12 +20,12 @@
 #endif
 
 #define ALLOC(dst) do {\
-		if ( ( (dst) = malloc(sizeof(*(dst)))) == NULL ) \
+		if ( ( (dst) = malloc(sizeof(*(dst))) ) == NULL ) \
 			FATAL("Cannot allocate %zd bytes", sizeof(*(dst))); } while (0)
 
-#define REALLOC(dst, sz) do {\
-		if ( ( (dst) = realloc((dst), (sz))) == NULL ) \
-			FATAL("Cannot reallocate %zd bytes", (sz)); } while (0)
+#define REALLOCN(dst, n) do {\
+		if ( ( (dst) = realloc((dst), (n)*sizeof(*(dst))) ) == NULL )	\
+			FATAL("Cannot reallocate %zd bytes", (n)*sizeof(*(dst))); } while (0)
 
 #define ALLOCN(dst, n) do {\
 		if ( ( (dst) = calloc((n), sizeof(*(dst))) ) == NULL ) \

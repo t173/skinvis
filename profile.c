@@ -21,10 +21,9 @@
 #define INITIAL_MAX_CELL 4
 #define INITIAL_PATCH_ALLOC 4
 
-static void profile_init(struct profile *p);
 static void profile_enlarge(struct profile *p, int new_max);
 static struct patch_profile *profile_get_patch(struct profile *p, int patch_id);
-static struct patch_profile *patch_profile_new(int patch_id, int max_cell);
+static struct patch_profile *patch_profile_new(int patch_id);
 static struct patch_profile *patch_profile_enlarge(struct patch_profile *p, int new_max);
 
 static long
@@ -81,7 +80,7 @@ profile_read(struct profile *p, const char *csvfile)
 		int col = 0;
 		for ( char *tok = strtok(line, DELIM); tok; tok = strtok(NULL, DELIM), col++ ) {
 			if ( line_num == 1 ) {
-				if ( !headers[col] || !strcmp(tok, headers[col]) ) {
+				if ( !headers[col] || strcmp(tok, headers[col]) ) {
 					PARSE_ERR("Column header mismatch, column %d: %s", col, tok);
 				}
 				continue;
@@ -143,18 +142,16 @@ profile_read(struct profile *p, const char *csvfile)
 void
 profile_tare(struct profile *p)
 {
-	for ( int i=0; i<PROFILE_MAXPATCHES; i++ ) {
-		if ( p->patch[i] ) {
-			memset(p->patch[i]->baseline, 0, sizeof(p->patch[i]->baseline));
-		}
+	for ( int i=0; i < p->num_patches; i++ ) {
+		memset(p->patch[i]->baseline, 0, p->patch[i]->num_cells*sizeof(*p->patch[i]->baseline));
 	}
 }
 
-static void
+void
 profile_init(struct profile *p)
 {
 	if ( !p ) return;
-	memset(p, 0, sizeof(p));
+	memset(p, 0, sizeof(*p));
 	p->csvfile = NULL;
 	p->num_patches = 0;
 
@@ -176,8 +173,8 @@ profile_enlarge(struct profile *p, int new_max)
 {
 	if ( !p || new_max <= p->max_patch_id )
 		return;
-	REALLOC(p->patch, new_max);
-	REALLOC(p->patch_idx, new_max);
+	REALLOCN(p->patch, new_max);
+	REALLOCN(p->patch_idx, new_max);
 	for ( int i=p->max_patch_id; i < new_max; i++ ) {
 		p->patch[i] = NULL;
 		p->patch_idx[i] = -1;
@@ -194,9 +191,12 @@ patch_profile_new(int patch_id)
 	ALLOC(p);
 	memset(p, 0, sizeof(*p));
 	p->num_cells = 0;
-	p->patch_id = id;
+	p->patch_id = patch_id;
 	p->max_cell_id = max_cell;
 	ALLOCN(p->cell_idx, max_cell);
+	for ( int i=0; i < max_cell; i++ ) {
+		p->cell_idx[i] = -1;
+	}
 	ALLOCN(p->baseline, max_cell);
 	ALLOCN(p->c0, max_cell);
 	ALLOCN(p->c1, max_cell);
@@ -208,17 +208,15 @@ patch_profile_new(int patch_id)
 static struct patch_profile *
 profile_get_patch(struct profile *p, int patch_id)
 {
-	struct patch_profile *ret;
-	
 	// Enable larger patch IDs if needed
 	if ( patch_id >= p->max_patch_id ) {
 		profile_enlarge(p, MAX(patch_id, 2*p->max_patch_id));
 	}
 
 	// Enlarge patch allocation if needed
-	if ( p->alloc >= p->num_patches ) {
+	if ( p->num_patches == p->alloc ) {
 		p->alloc *= 2;
-		REALLOC(p->patch, p->alloc);
+		REALLOCN(p->patch, p->alloc);
 	}
 
 	if ( p->patch_idx[patch_id] < 0 ) {
@@ -234,16 +232,16 @@ patch_profile_enlarge(struct patch_profile *p, int new_max)
 	if ( !p ) return NULL;
 	if ( new_max <= p->max_cell_id ) return p;
 	
-	REALLOC(p->cell_idx, new_max_cell);
-	REALLOC(p->baseline, new_max_cell);
-	REALLOC(p->c0, new_max_cell);
-	REALLOC(p->c1, new_max_cell);
-	REALLOC(p->c2, new_max_cell);
+	REALLOCN(p->cell_idx, new_max);
+	REALLOCN(p->baseline, new_max);
+	REALLOCN(p->c0, new_max);
+	REALLOCN(p->c1, new_max);
+	REALLOCN(p->c2, new_max);
 	
 	for ( int i=p->max_cell_id; i < new_max; i++ ) {
 		p->cell_idx[i] = -1;
 	}
-	p->max_cell_id = new_max_cell;
+	p->max_cell_id = new_max;
 	return p;
 }
 
@@ -251,12 +249,11 @@ static void
 patch_profile_free(struct patch_profile *p)
 {
 	if ( p ) {
-		free(p->patch[n].cell_idx);
-		free(p->patch[n].baseline);
-		free(p->patch[n].c0);
-		free(p->patch[n].c1);
-		free(p->patch[n].c2);
-		free(p->patch[n]);
+		free(p->cell_idx);
+		free(p->baseline);
+		free(p->c0);
+		free(p->c1);
+		free(p->c2);
 	}
 }
 
@@ -274,10 +271,19 @@ profile_free(struct profile *p)
 void
 profile_set_baseline(struct profile *p, int patch, int cell, double value)
 {
-	if ( !p->patch[patch] ) {
-		p->patch[patch] = patch_profile_new(patch);
-	}
-	p->patch[patch]->baseline[cell] = value;
+	/* if ( !p->patch[p->patch_idx[patch]] ) { */
+	/* 	p->patch[patch] = patch_profile_new(patch); */
+	/* } */
+	struct patch_profile *pp = p->patch[p->patch_idx[patch]];
+	if ( !pp ) return;
+	pp->baseline[pp->cell_idx[cell]] = value;
+}
+
+struct patch_profile *
+find_patch_profile(struct profile *p, int patch_id)
+{
+	const int index = p->patch_idx[patch_id];
+	return index < 0 ? NULL : p->patch[index];
 }
 
 //EOF

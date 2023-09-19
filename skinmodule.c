@@ -209,17 +209,16 @@ Skin_read_profile(SkinObject *self, PyObject *args) {
 
 static PyObject *
 Skin_get_patch_profile(SkinObject *self, PyObject *args) {
-	DEBUGMSG("Skin_get_patch_profile()");
 	int patch;
 	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
 		WARNING("Skin_get_patch_profile() could not parse argument");
 		return NULL;
 	}
-	struct patch_profile *prof = skin_get_patch_profile(self->skin, patch);
+	struct patch_profile *prof = skin_get_patch_profile(&self->skin, patch);
 	const int num_cells = prof->num_cells;
 
 	PyObject *ret = PyDict_New();
-	PyDict_SetItemString(ret, "id", PyLong_FromLong((long)prof->id));
+	PyDict_SetItemString(ret, "id", PyLong_FromLong((long)prof->patch_id));
 
 	PyObject *baseline = PyList_New(num_cells);
 	PyObject *c0 = PyList_New(num_cells);
@@ -240,32 +239,17 @@ Skin_get_patch_profile(SkinObject *self, PyObject *args) {
 
 static PyObject *
 Skin_get_cell_ids(SkinObject *self, PyObject *args) {
-	DEBUGMSG("Skin_get_patch_profile()");
 	int patch;
 	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
-		WARNING("Skin_get_patch_profile() could not parse argument");
+		WARNING("Skin_get_cell_ids() could not parse argument");
 		return NULL;
 	}
-	struct patch_profile *prof = self->skin.profile.patch[patch];
-	const int num_cells = self->skin.layout.patch[patch].num_cells;
-
-	PyObject *ret = PyDict_New();
-	PyDict_SetItemString(ret, "id", PyLong_FromLong((long)prof->id));
-
-	PyObject *baseline = PyList_New(num_cells);
-	PyObject *c0 = PyList_New(num_cells);
-	PyObject *c1 = PyList_New(num_cells);
-	PyObject *c2 = PyList_New(num_cells);
-	for ( int c=0; c<num_cells; c++ ) {
-		PyList_SetItem(baseline, c, Py_BuildValue("d", prof->baseline[c]));
-		PyList_SetItem(c0, c, Py_BuildValue("d", prof->c0[c]));
-		PyList_SetItem(c1, c, Py_BuildValue("d", prof->c1[c]));
-		PyList_SetItem(c2, c, Py_BuildValue("d", prof->c2[c]));
+	const struct patch_layout *pl = &self->skin.layout.patch[self->skin.layout.patch_idx[patch]];
+	const int num_cells = pl->num_cells;
+	PyObject *ret = PyList_New(num_cells);
+	for ( int i=0; i < num_cells; i++ ) {
+		PyList_SetItem(ret, i, PyLong_FromLong((long)pl->cell_id[i]));
 	}
-	PyDict_SetItemString(ret, "baseline", baseline);
-	PyDict_SetItemString(ret, "c0", c0);
-	PyDict_SetItemString(ret, "c1", c1);
-	PyDict_SetItemString(ret, "c2", c2);
 	return ret;
 }
 
@@ -293,7 +277,6 @@ Skin_get_cell_ids(SkinObject *self, PyObject *args) {
 
 static PyObject *
 Skin_get_patch_state(SkinObject *self, PyObject *args) {
-	DEBUGMSG("Skin_get_state()");
 	int patch;
 	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
 		WARNING("Skin_get_patch_state() could not parse argument");
@@ -375,6 +358,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "get_patch_profile", (PyCFunction)Skin_get_patch_profile, METH_VARARGS, "Gets calibration settings for a specific patch" },
 	//{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of all patches" },
 	{ "get_patch_state", (PyCFunction)Skin_get_patch_state, METH_VARARGS, "Gets current state of a specific patch" },
+	{ "get_cell_ids", (PyCFunction)Skin_get_cell_ids, METH_VARARGS, "Gets cell ID numbers in same order as get_patch_state" },
 	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
 	{ "get_layout", (PyCFunction)Skin_get_layout, METH_NOARGS, "Gets skin device layout of patches and cells" },
 	{ "get_record_tally", (PyCFunction)Skin_get_record_tally, METH_NOARGS, "Gets tallies of valid and invalid records, based on error" },

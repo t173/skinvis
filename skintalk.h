@@ -96,9 +96,7 @@ struct patch_profile *skin_get_patch_profile(struct skin *skin, int patch);
 
 skincell_t skin_get_calibration(struct skin *skin, int patch, int cell);
 
-// Writes the latest state of all cells to dst. Values are (patch,
-// cell) in row major order.
-int skin_get_state(struct skin *skin, skincell_t *dst);
+//int skin_get_state(struct skin *skin, skincell_t *dst);
 int skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst);
 
 //int skin_get_pressure(struct skin *skin, struct skin_pressure *dst);

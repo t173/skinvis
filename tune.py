@@ -198,14 +198,6 @@ def anim_init(sensor, patch):
     tare_button.label.set_fontsize(14)
     tare_button.on_clicked(lambda _: calibrate(sensor))
 
-    # textbox_axs = [fig.add_subplot(gs[heat_rows + i*cellline_rows, 1]) for i in range(num_cells)]
-    # calib = sensor.get_patch_profile(patch)
-    # textboxes = {}
-    # for i in range(num_cells):
-    #     textbox = TextBox(textbox_axs[i], 'c1 =', initial='%g' % calib['c1'][i], color='gray', hovercolor='lightgray')
-    #     textbox.on_submit(lambda txt: textbox_submit(sensor, patch, i, txt))
-    #     textboxes[i] = textbox
-
     heat.axis('off')
     heat.set_xlim(*lims[:,0])
     heat.set_ylim(*lims[:,1])
@@ -242,11 +234,12 @@ def anim_init(sensor, patch):
         heat.text(pos[0], pos[1], str(cell_id), ha='center', va='center', color='gray')
 
     cell_lines = []
+    cell_labels = sensor.get_cell_ids(patch)
     for i, ax in enumerate(cell_ax):
         ax.tick_params(left=False, right=True, top=False,
                        bottom=False, labelleft=False, labelright=True,
                        labelbottom=False, labeltop=False)
-        ax.set_ylabel(str(i), color='dimgray', rotation=0, ha='center', va='center', labelpad=10)
+        ax.set_ylabel(cell_labels[i], color='dimgray', rotation=0, ha='center', va='center', labelpad=10)
         line, = ax.plot(np.arange(cmdline.history), history[i, :], color='k')
         ax.set_xlim(0, cmdline.history)
         cell_lines.append(line)
@@ -263,19 +256,11 @@ def anim_init(sensor, patch):
         'history': history,
         'history_pos': history_pos,
         'tare': tare_button,
-        #'textboxes': textboxes,
     }
     return fig, args
 
 # state_max = None
 def anim_update(frame, args):
-    # global state_max
-    # state = sensor.get_state()
-    # if state_max is None:
-    #     state_max = state
-    # else:
-    #     state_max = np.maximum(state_max, state)
-
     patch = args['patch']
     state = args['sensor'].get_patch_state(patch)
 
@@ -289,9 +274,9 @@ def anim_update(frame, args):
         h = args['history'][c, :]
         line = args['cell_lines'][c]
         xdata, ydata = line.get_data()
-        line.set_data(xdata, np.hstack([h[pos:], h[:pos]]))
         hmin = h.min()
         hmax = h.max()
+        line.set_data(xdata, np.hstack([h[pos:], h[:pos]]))
         if hmin == hmax:
             hmin -= 100
             hmax += 100
@@ -318,16 +303,9 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
-    # User side patch numbers start with 1
     fig, args = anim_init(sensor, cmdline.patch)
     anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, fargs=(args,), interval=cmdline.delay)
     
-    # plt.figure(figsize=(1,1))
-    # ax = plt.axes()
-    # button = Button(ax, 'Tare')
-    # button.label.set_fontsize(24)
-    # button.on_clicked(lambda _: calibrate(sensor))
-
     sensor.start()
     if not cmdline.nocalibrate:
         calibrate(sensor)
@@ -337,8 +315,6 @@ def main():
     shutdown = True
     sensor.stop()
     stats_thread.join()
-
-    #print(state_max)
 
 if __name__ == '__main__':
     main()

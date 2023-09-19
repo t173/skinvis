@@ -125,7 +125,7 @@ static void
 get_record(struct skin_record *dst, uint8_t *src)
 {
 	// Patch numbers from device start at 1, but cell numbers start at 0
-	dst->patch = (src[1] >> 4) - 1;
+	dst->patch = (src[1] >> 4);
 	dst->cell = src[1] & 0x0F;
 	dst->value = convert_24to32(&src[2]);
 }
@@ -295,15 +295,18 @@ write_csv_row(struct skin *skin)
 static skincell_t
 scale_value(struct skin *skin, int patch, int cell, int32_t rawvalue)
 {
-	if ( !skin->profile.num_patches )
-		return (skincell_t)rawvalue;
+	/* if ( !skin->profile.num_patches ) */
+	/* 	return (skincell_t)rawvalue; */
 
-	struct patch_profile *p = skin->profile.patch[patch];
-	skincell_t value = rawvalue - p->baseline[cell];
-	if ( p->c1[cell] == 0.0 ) {
+	struct patch_profile *p = find_patch_profile(&skin->profile, patch);
+	const int index = p->cell_idx[cell];
+	if ( index < 0 )
+		return rawvalue;
+	skincell_t value = rawvalue - p->baseline[index];
+	if ( p->c1[index] == 0.0 ) {
 		return 0;
 	} else {
-		return p->c0[cell] + value*(p->c1[cell] + value*p->c2[cell]);
+		return p->c0[index] + value*(p->c1[index] + value*p->c2[index]);
 	}
 }
 
@@ -553,10 +556,10 @@ skin_read_profile(struct skin *skin, const char *csv)
 struct patch_profile *
 skin_get_patch_profile(struct skin *skin, int patch)
 {
-	if ( !skin || patch < 0 || patch > skin->layout.max_patch_id ) {
+	if ( !skin || patch < 0 || patch > skin->profile.max_patch_id ) {
 		return NULL;
 	}
-	return &lo->patch[lo->patch_idx[patch]];
+	return skin->profile.patch[skin->profile.patch_idx[patch]];
 }
 
 skincell_t
@@ -569,14 +572,14 @@ skin_get_calibration(struct skin *skin, int patch, int cell)
 	return ret;
 }
 
-int
-skin_get_state(struct skin *skin, skincell_t *dst)
-{
-	pthread_mutex_lock(&skin->lock);
-	memcpy(dst, skin->value, skin->total_cells*sizeof(*skin->value));
-	pthread_mutex_unlock(&skin->lock);
-	return skin->num_patches;
-}
+/* int */
+/* skin_get_state(struct skin *skin, skincell_t *dst) */
+/* { */
+/* 	pthread_mutex_lock(&skin->lock); */
+/* 	memcpy(dst, skin->value, skin->total_cells*sizeof(*skin->value)); */
+/* 	pthread_mutex_unlock(&skin->lock); */
+/* 	return skin->num_patches; */
+/* } */
 
 int
 skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)

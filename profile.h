@@ -9,7 +9,7 @@ struct profile {
 	const char *csvfile;
 	int num_patches;
 	struct patch_profile **patch;
-	size_t alloc;  // allocation size of *patch
+	ssize_t alloc;  // allocation size of *patch
 
 	int max_patch_id;
 	int *patch_idx;  // map match ID to index of *patch
@@ -45,7 +45,9 @@ void profile_tare(struct profile *p);
 void profile_set_baseline(struct profile *p, int patch, int cell, double value);
 
 // Calibration profile
-//void profile_init(struct profile *p);
+void profile_init(struct profile *p);
 void profile_free(struct profile *p);
+
+struct patch_profile *find_patch_profile(struct profile *p, int patch_id);
 
 #endif // PROFILE_H_
