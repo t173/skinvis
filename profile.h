@@ -12,7 +12,7 @@ struct profile {
 	ssize_t alloc;  // allocation size of *patch
 
 	int max_patch_id;
-	int *patch_idx;  // map match ID to index of *patch
+	int *patch_idx;  // map ID to index of *patch
 };
 
 struct patch_profile {
@@ -31,11 +31,11 @@ struct patch_profile {
 	double *c2;     // quadratic coefficient
 };
 
-// Get calibration value from struct profile prof
-#define profile_baseline(prof, p, c)  ( (prof).patch[(p)]->baseline[(c)] )
-#define profile_c0(prof, p, c)        ( (prof).patch[(p)]->c0[(c)] )
-#define profile_c1(prof, p, c)        ( (prof).patch[(p)]->c1[(c)] )
-#define profile_c2(prof, p, c)        ( (prof).patch[(p)]->c2[(c)] )
+// Get calibration value from struct patch_profile pp
+#define pp_baseline(pp, c)  ( (pp)->baseline[(pp)->cell_idx[(c)]] )
+#define pp_c0(pp, c)        ( (pp)->c0[(pp)->cell_idx[(c)]] )
+#define pp_c1(pp, c)        ( (pp)->c1[(pp)->cell_idx[(c)]] )
+#define pp_c2(pp, c)        ( (pp)->c2[(pp)->cell_idx[(c)]] )
 
 // Reads calibration profile from CSV file into p
 int profile_read(struct profile *p, const char *csvfile);

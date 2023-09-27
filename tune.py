@@ -184,15 +184,18 @@ def anim_init(sensor, patch):
 
     heat_rows = 6
     cellline_rows = 1
+    agg_rows = 1
     button_rows = 1
-    fig = plt.figure(constrained_layout=False, figsize=(3, 0.4*(heat_rows + cellline_rows*num_cells + button_rows)), facecolor='lightgray')
+    total_rows = heat_rows + cellline_rows*num_cells + agg_rows + button_rows
+    fig = plt.figure(constrained_layout=False, figsize=(3, 0.4*total_rows), facecolor='w')#'lightgray')
     gs = fig.add_gridspec(
-        nrows=heat_rows + num_cells*cellline_rows + button_rows, ncols=1,
-        hspace=0, wspace=0, right=0.85,
-        left=0.1, top=0.95, bottom=0.05,
+        nrows=total_rows, ncols=1,
+        hspace=0.1, wspace=0, right=0.75,
+        left=0.125, top=0.95, bottom=0.05,
     )
     heat = fig.add_subplot(gs[:heat_rows, 0])
-    cell_ax = [fig.add_subplot(gs[heat_rows + i*cellline_rows, 0]) for i in range(num_cells)]
+    cell_axs = [fig.add_subplot(gs[heat_rows + i*cellline_rows, 0]) for i in range(num_cells)]
+    avg_ax = fig.add_subplot(gs[heat_rows + num_cells*cellline_rows, 0])
     tare_ax = fig.add_subplot(gs[-button_rows, 0])
     tare_button = Button(tare_ax, 'Tare')
     tare_button.label.set_fontsize(14)
@@ -225,30 +228,55 @@ def anim_init(sensor, patch):
     collection.set_array(state)
     heat.add_collection(collection)
 
-    history = np.zeros((num_cells, cmdline.history))
+    history = np.zeros((num_cells + 1, cmdline.history))
     history_pos = 0
-    history[:, history_pos] = state
+    history[:num_cells, history_pos] = state
+    history[-1, history_pos] = history[:num_cells, history_pos].mean()
 
     for cell_id in patch_layout:
         pos = patch_layout[cell_id]
-        heat.text(pos[0], pos[1], str(cell_id), ha='center', va='center', color='gray')
+        heat.text(pos[0], pos[1], str(cell_id), ha='center', va='center', color='gray', fontsize=14)
 
     cell_lines = []
     cell_labels = sensor.get_cell_ids(patch)
-    for i, ax in enumerate(cell_ax):
-        ax.tick_params(left=False, right=True, top=False,
-                       bottom=False, labelleft=False, labelright=True,
-                       labelbottom=False, labeltop=False)
-        ax.set_ylabel(cell_labels[i], color='dimgray', rotation=0, ha='center', va='center', labelpad=10)
-        line, = ax.plot(np.arange(cmdline.history), history[i, :], color='k')
-        ax.set_xlim(0, cmdline.history)
-        cell_lines.append(line)
+    
+    cell_lbl_props = {
+        'color': 'dimgray',
+        'rotation': 0,
+        #'labelpad': 10,
+    }
 
+    def configure_ax(ax, lbl, values, **kwargs):
+        ax.axis('off') # gives 10x frame rate!!!
+        ax.set_xlim(0, cmdline.history)
+        line, = ax.plot(np.arange(cmdline.history), values, **kwargs)
+        x, y, width, height = ax.get_position().bounds
+        margin = 0.05
+        plt.figtext(x - margin, y + 0.5*height, lbl, ha='center', va='center', fontsize=12, **cell_lbl_props)
+        upper_lbl = '%.0f' % values.max()
+        lower_lbl = '%.0f' % values.min()
+        hmargin = 0.01
+        vmargin = 0.005
+        upper = plt.figtext(x + width + hmargin, y + height - vmargin, upper_lbl, ha='left', va='top', **cell_lbl_props)
+        lower = plt.figtext(x + width + hmargin, y + vmargin, lower_lbl, ha='left', va='bottom', **cell_lbl_props)
+        return line, upper, lower
+
+    cell_lines = []
+    lowers = []
+    uppers = []
+    for i, ax in enumerate(cell_axs):
+        line, upper, lower = configure_ax(ax, cell_labels[i], history[i, :], color='k')
+        cell_lines.append(line)
+        uppers.append(upper)
+        lowers.append(lower)
+    avg_line, avg_upper, avg_lower = configure_ax(avg_ax, 'x\u0305', history[-1, :], color='#ad0000')
+
+    global args
     args = {
         'sensor': sensor,
         'patch': patch,
         'heat': heat,
-        'cell_ax': cell_ax,
+        'cell_axs': cell_axs,
         'cell_lines': cell_lines,
         'cmap': cmap,
         'collection': collection,
@@ -256,20 +284,26 @@ def anim_init(sensor, patch):
         'history': history,
         'history_pos': history_pos,
         'tare': tare_button,
+        'avg_ax': avg_ax,
+        'avg_line': avg_line,
+        'uppers': uppers,
+        'lowers': lowers,
+        'avg_upper': avg_upper,
+        'avg_lower': avg_lower,
     }
-    return fig, args
+    return fig
 
-# state_max = None
-def anim_update(frame, args):
+def anim_update(frame):
+    global args
     patch = args['patch']
+
     state = args['sensor'].get_patch_state(patch)
-
-    args['history_pos'] = (args['history_pos'] + 1) % cmdline.history
-
-    args['history'][:, args['history_pos']] = state
+    args['history'][:-1, args['history_pos']] = state
+    args['history'][-1, args['history_pos']] = args['history'][:-1, args['history_pos']].mean()
     args['collection'].set_array(state)
 
-    pos = (args['history_pos'] + 1) % cmdline.history
+    args['history_pos'] = (args['history_pos'] + 1) % cmdline.history
+    pos = args['history_pos']
     for c in range(len(args['cell_lines'])):
         h = args['history'][c, :]
         line = args['cell_lines'][c]
@@ -280,7 +314,19 @@ def anim_update(frame, args):
         if hmin == hmax:
             hmin -= 100
             hmax += 100
-        args['cell_ax'][c].set_ylim(hmin, hmax)
+        args['cell_axs'][c].set_ylim(hmin, hmax)
+        args['uppers'][c].set_text('%.0f' % hmax)
+        args['lowers'][c].set_text('%.0f' % hmin)
+
+    avg = args['history'][-1, :]
+    avg_line = args['avg_line']
+    xdata, ydata = avg_line.get_data()
+    avg_line.set_data(xdata, np.hstack([avg[pos:], avg[:pos]]))
+    avg_min = avg.min()
+    avg_max = avg.max()
+    args['avg_ax'].set_ylim(avg_min, avg_max)
+    args['avg_upper'].set_text('%.0f' % avg_max)
+    args['avg_lower'].set_text('%.0f' % avg_min)
 
     global total_frames
     total_frames += 1
@@ -303,13 +349,13 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
-    fig, args = anim_init(sensor, cmdline.patch)
-    anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, fargs=(args,), interval=cmdline.delay)
-    
     sensor.start()
     if not cmdline.nocalibrate:
         calibrate(sensor)
 
+    fig = anim_init(sensor, cmdline.patch)
+    anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, interval=cmdline.delay)
+    
     plt.show()
 
     shutdown = True

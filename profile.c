@@ -14,8 +14,6 @@
 
 #define PARSE_ERR(msg, ...) do { FATAL("line %d: " msg, line_num, ##__VA_ARGS__); } while (0)
 
-#define pp_cell_param(p, c, param) ( (p)->param[(p)->cell_idx[c]] )
-
 // Initial maximum patch or cell ID (doubles as needed)
 #define INITIAL_MAX_PATCH 4
 #define INITIAL_MAX_CELL 4
@@ -113,19 +111,19 @@ profile_read(struct profile *p, const char *csvfile)
 				break;
 
 			case 2:  // baseline value
-				pp_cell_param(current, cell_id, baseline) = get_long(tok);
+				pp_baseline(current, cell_id) = get_long(tok);
 				break;
 
 			case 3: // c0
-				pp_cell_param(current, cell_id, c0) = get_double(tok);
+				pp_c0(current, cell_id) = get_double(tok);
 				break;
 
 			case 4: // c1
-				pp_cell_param(current, cell_id, c1) = get_double(tok);
+				pp_c1(current, cell_id) = get_double(tok);
 				break;
 
 			case 5: // c2
-				pp_cell_param(current, cell_id, c2) = get_double(tok);
+				pp_c2(current, cell_id) = get_double(tok);
 				break;
 
 			default:
@@ -271,9 +269,6 @@ profile_free(struct profile *p)
 void
 profile_set_baseline(struct profile *p, int patch, int cell, double value)
 {
-	/* if ( !p->patch[p->patch_idx[patch]] ) { */
-	/* 	p->patch[patch] = patch_profile_new(patch); */
-	/* } */
 	struct patch_profile *pp = p->patch[p->patch_idx[patch]];
 	if ( !pp ) return;
 	pp->baseline[pp->cell_idx[cell]] = value;

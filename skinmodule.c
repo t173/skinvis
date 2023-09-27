@@ -149,24 +149,59 @@ Skin_calibrate_stop(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	return Py_None;
 }
 
-/* static PyObject * */
-/* Skin_get_calibration(SkinObject *self, PyObject *args) { */
-/* 	int patch, cell; */
-/* 	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) { */
-/* 		return NULL; */
-/* 	} */
-/* 	// Patch numbers start at 1 */
-/* 	if ( patch <= 0 || patch > self->skin.num_patches ) { */
-/* 		PyErr_SetString(PyExc_ValueError, "patch number out of range"); */
-/* 		return NULL; */
-/* 	} */
-/* 	// Cell numbers start at 0 */
-/* 	if ( cell < 0 || cell >= self->skin.num_cells ) { */
-/* 		PyErr_SetString(PyExc_ValueError, "cell number out of range"); */
-/* 		return NULL; */
-/* 	} */
-/* 	return PyLong_FromLong((long)skin_get_calibration(&self->skin, patch, cell)); */
-/* } */
+static PyObject *
+Skin_get_calibration(SkinObject *self, PyObject *args) {
+	int patch, cell;
+	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) {
+		return NULL;
+	}
+	enum addr_check chk = address_check(&self->skin, patch, cell);
+	switch ( chk ) {
+	case ADDR_PATCH_OOR:
+		PyErr_Format(PyExc_ValueError, "Patch number %d is out of range", patch);
+		return NULL;
+	case ADDR_PATCH_INV:
+		PyErr_Format(PyExc_ValueError, "Patch number %d is invalid", patch);
+		return NULL;
+	case ADDR_CELL_OOR:
+		PyErr_Format(PyExc_ValueError, "Cell number %d for patch %d is out of range", cell, patch);
+		return NULL;
+	case ADDR_CELL_INV:
+		PyErr_Format(PyExc_ValueError, "Cell number %d for patch %d is invalid", cell, patch);
+		return NULL;
+	case ADDR_VALID:
+	default:
+		return PyLong_FromLong((long)skin_get_calibration(&self->skin, patch, cell));
+	}
+	return NULL;
+}
+
+static PyObject *
+Skin_get_calib_patch(SkinObject *self, PyObject *args) {
+	int patch;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		return NULL;
+	}
+	enum addr_check chk = address_check(&self->skin, patch, 0);
+	if ( chk == ADDR_PATCH_OOR ) {
+		PyErr_Format(PyExc_ValueError, "Patch number %d is out of range", patch);
+		return NULL;
+	} else if ( chk == ADDR_PATCH_INV ) {
+		PyErr_Format(PyExc_ValueError, "Patch number %d is invalid", patch);
+		return NULL;
+	}
+
+	const struct layout *lo = &self->skin.layout;
+	const struct patch_layout *pl = &lo->patch[lo->patch_idx[patch]];
+	const struct patch_profile *pp = skin_get_patch_profile(&self->skin, patch);
+	
+	PyObject *ret = PyList_New(pl->num_cells);
+	for ( int c=0; c < pl->num_cells; c++ ) {
+		int cell_id = pl->cell_id[c];
+		PyList_SetItem(ret, c, PyLong_FromLong((long)pp_baseline(pp, cell_id)));
+	}
+	return ret;
+}
 
 static PyObject *
 Skin_log(SkinObject *self, PyObject *args) {
@@ -351,14 +386,15 @@ static PyMethodDef Skin_methods[] = {
 	{ "set_pressure_alpha", (PyCFunction)Skin_set_pressure_alpha, METH_VARARGS, "Sets alpha for pressure smoothing" },
 	{ "calibrate_start", (PyCFunction)Skin_calibrate_start, METH_NOARGS, "Start baseline calibration" },
 	{ "calibrate_stop", (PyCFunction)Skin_calibrate_stop, METH_NOARGS, "Stop baseline calibration" },
-	//{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
+	{ "get_calib", (PyCFunction)Skin_get_calibration, METH_VARARGS, "Gets a baseline calibration value" },
+	{ "get_calib_patch", (PyCFunction)Skin_get_calib_patch, METH_VARARGS, "Gets all baseline calibration values for a single patch (order of get_cell_ids)" },
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
 	{ "get_patch_profile", (PyCFunction)Skin_get_patch_profile, METH_VARARGS, "Gets calibration settings for a specific patch" },
 	//{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of all patches" },
 	{ "get_patch_state", (PyCFunction)Skin_get_patch_state, METH_VARARGS, "Gets current state of a specific patch" },
-	{ "get_cell_ids", (PyCFunction)Skin_get_cell_ids, METH_VARARGS, "Gets cell ID numbers in same order as get_patch_state" },
+	{ "get_cell_ids", (PyCFunction)Skin_get_cell_ids, METH_VARARGS, "Gets cell ID numbers in a common order as other reporting methods (get_patch_state, etc.)" },
 	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
 	{ "get_layout", (PyCFunction)Skin_get_layout, METH_NOARGS, "Gets skin device layout of patches and cells" },
 	{ "get_record_tally", (PyCFunction)Skin_get_record_tally, METH_NOARGS, "Gets tallies of valid and invalid records, based on error" },

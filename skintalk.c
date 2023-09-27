@@ -491,7 +491,7 @@ skin_calibrate_start(struct skin *skin)
 {
 	DEBUGMSG("skin_calibrate_start()");
 	if ( !skin->reader ) {
-		WARNING("Not reading from device (Try skin_start)");
+		WARNING("Not reading from device (try skin_start)");
 		return;
 	}
 	if ( skin->calibrating || skin->calib_sum || skin->calib_count ) {
@@ -510,13 +510,14 @@ void
 skin_calibrate_stop(struct skin *skin)
 {
 	DEBUGMSG("skin_calibrate_stop()");
-	int warned = 0;
 	pthread_mutex_lock(&skin->lock);
 	skin->calibrating = 0;
 	const struct layout *lo = &skin->layout;
 	for ( int p=0; p < lo->num_patches; p++ ) {
 		const struct patch_layout *pl = &lo->patch[p];
 		const int patch_id = pl->patch_id;
+		struct patch_profile *pp = skin_get_patch_profile(skin, patch_id);
+		int patch_zeros = 0;
 		for ( int c=0; c < pl->num_cells; c++ ) {
 			const int cell_id = pl->cell_id[c];
 			skincell_t value = 0;
@@ -524,13 +525,14 @@ skin_calibrate_stop(struct skin *skin)
 			if ( skin->calib_count[i] > 0 ) {
 				value = skin->calib_sum[i]/skin->calib_count[i];
 			} else {
-				if ( !warned ) {
-					WARNING("No calibration samples recorded");
-					warned = 1;
-				}
+				patch_zeros++;
+				continue;
 			}
-			profile_set_baseline(&skin->profile, patch_id, cell_id, value);
-			EVENT(skin, "baseline", "%d.%d=%d", patch_id, cell_id, profile_baseline(skin->profile, patch_id, cell_id));
+			pp_baseline(pp, cell_id) = value;
+			EVENT(skin, "baseline", "%d.%d=%d", patch_id, cell_id, pp_baseline(pp, cell_id));
+		}
+		if ( patch_zeros > 0 ) {
+			WARNING("No calibration samples from %d cells of patch %d", patch_zeros, patch_id);
 		}
 	}
 	free(skin->calib_sum);
@@ -566,8 +568,9 @@ skincell_t
 skin_get_calibration(struct skin *skin, int patch, int cell)
 {
 	// Patch number from user starts at 1
+	struct patch_profile *pp = skin_get_patch_profile(skin, patch);
 	pthread_mutex_lock(&skin->lock);
-	skincell_t ret = profile_baseline(skin->profile, patch, cell);
+	skincell_t ret = pp_baseline(pp, cell);
 	pthread_mutex_unlock(&skin->lock);
 	return ret;
 }

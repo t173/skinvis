@@ -12,6 +12,8 @@
 #include "util.h"
 #include "layout.h"
 
+#define COMMENT_CHAR '#'
+
 static long
 get_long(const char *tok)
 {
@@ -68,10 +70,17 @@ layout_read(struct layout *lo, const char *csvfile)
 
 	int line_num;
 	for ( line_num=1; (line_len = getline(&line, &len, f)) > 0; line_num++ ) {
-		// Strip EOL
-		while ( line_len > 0 && (line[line_len - 1] == '\n' || line[line_len - 1] == '\r') ) {
+		// Strip EOL and trailing spaces
+		while ( line_len > 0 &&
+				(line[line_len - 1] == '\n' ||
+				 line[line_len - 1] == '\r' ||
+				 line[line_len - 1] == ' ' ) ) {
 			line[--line_len] = 0;
 		}
+
+		// Skip blank lines
+		if ( line_len == 0 || line[0] == COMMENT_CHAR )
+			continue;
 
 		int col = 1;
 		for ( char *tok = strtok(line, DELIM); tok; tok = strtok(NULL, DELIM), col++ ) {
