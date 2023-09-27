@@ -48,6 +48,8 @@ get_double(const char *tok)
 	return ret;
 }
 
+static const char *headers[] = { "patch", "cell", "baseline", "c0", "c1", "c2", NULL };
+
 int
 profile_read(struct profile *p, const char *csvfile)
 {
@@ -60,7 +62,6 @@ profile_read(struct profile *p, const char *csvfile)
 	const char *const DELIM = ",";
 	struct patch_profile *current = NULL;
 
-	static const char *headers[] = { "patch", "cell", "baseline", "c0", "c1", "c2", NULL };
 
 	if ( !(f = fopen(csvfile, "rt")) ) {
 		FATAL("Cannot open file: %s\n%s", csvfile, strerror(errno));
@@ -135,6 +136,32 @@ profile_read(struct profile *p, const char *csvfile)
 	free(line);
 	fclose(f);
 	return p->num_patches;
+}
+
+void
+profile_write(struct profile *p, const char *csvfile)
+{
+	FILE *f;
+	if ( !(f = fopen(csvfile, "wt")) ) {
+		FATAL("Cannot open file: %s\n%s", csvfile, strerror(errno));
+	}
+	
+	for ( int i=0; headers[i]; i++ ) {
+		if ( i > 0 )
+			fputc(',', f);
+		fprintf(f, "%s", headers[i]);
+	}
+	fputc('\n', f);
+	for ( int i=0; i < p->num_patches; i++ ) {
+		struct patch_profile *pp = p->patch[i];
+		int patch = pp->patch_id;
+		for ( int c=0; c < pp->max_cell_id; c++ ) {
+			if ( pp->cell_idx[c] < 0 )
+				continue;
+			fprintf(f, "%d,%d,%d,%g,%g,%g\n", patch, c, pp_baseline(pp, c), pp_c0(pp, c), pp_c1(pp, c), pp_c2(pp, c));
+		}
+	}
+	fclose(f);
 }
 
 void

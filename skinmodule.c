@@ -243,6 +243,19 @@ Skin_read_profile(SkinObject *self, PyObject *args) {
 }
 
 static PyObject *
+Skin_save_profile(SkinObject *self, PyObject *args) {
+	DEBUGMSG("Skin_read_profile()");
+	char *filename;
+	if ( !self || !PyArg_ParseTuple(args, "s", &filename) ) {
+		WARNING("Skin_save_profile() could not parse argument");
+		return NULL;
+	}
+	skin_save_profile(&self->skin, filename);
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyObject *
 Skin_get_patch_profile(SkinObject *self, PyObject *args) {
 	int patch;
 	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
@@ -378,6 +391,31 @@ Skin_get_record_tally(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	return ret;
 }
 
+static PyObject *
+Skin_get_c1(SkinObject *self, PyObject *args) {
+	int patch, cell;
+	if ( !self || !PyArg_ParseTuple(args, "ii", &patch, &cell) ) {
+		return NULL;
+	}
+	struct patch_profile *pp = skin_get_patch_profile(&self->skin, patch);
+	return Py_BuildValue("d", pp_c1(pp, cell));
+}
+
+static PyObject *
+Skin_set_c1(SkinObject *self, PyObject *args) {
+	int patch, cell;
+	double c1;
+	if ( !self || !PyArg_ParseTuple(args, "iid", &patch, &cell, &c1) ) {
+		return NULL;
+	}
+	struct patch_profile *pp = skin_get_patch_profile(&self->skin, patch);
+
+	pp_c1(pp, cell) = c1;
+	
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -391,6 +429,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "log", (PyCFunction)Skin_log, METH_VARARGS, "Logs stream to file" },
 	{ "debuglog", (PyCFunction)Skin_debuglog, METH_VARARGS, "Logs debugging information to file" },
 	{ "read_profile", (PyCFunction)Skin_read_profile, METH_VARARGS, "Read dynamic range calibration profile from CSV file" },
+	{ "save_profile", (PyCFunction)Skin_save_profile, METH_VARARGS, "Save current calibration profile to CSV file" },
 	{ "get_patch_profile", (PyCFunction)Skin_get_patch_profile, METH_VARARGS, "Gets calibration settings for a specific patch" },
 	//{ "get_state", (PyCFunction)Skin_get_state, METH_NOARGS, "Gets current state of all patches" },
 	{ "get_patch_state", (PyCFunction)Skin_get_patch_state, METH_VARARGS, "Gets current state of a specific patch" },
@@ -398,6 +437,8 @@ static PyMethodDef Skin_methods[] = {
 	{ "get_patch_pressure", (PyCFunction)Skin_get_patch_pressure, METH_VARARGS, "Gets pressure for a single patch" },
 	{ "get_layout", (PyCFunction)Skin_get_layout, METH_NOARGS, "Gets skin device layout of patches and cells" },
 	{ "get_record_tally", (PyCFunction)Skin_get_record_tally, METH_NOARGS, "Gets tallies of valid and invalid records, based on error" },
+	{ "get_c1", (PyCFunction)Skin_get_c1, METH_VARARGS, "Gets c1 parameter for specific patch and cell" },
+	{ "set_c1", (PyCFunction)Skin_set_c1, METH_VARARGS, "Sets c1 parameter for specific patch and cell" },
 	{ NULL }
 };
 

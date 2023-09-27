@@ -555,6 +555,16 @@ skin_read_profile(struct skin *skin, const char *csv)
 	return ret;
 }
 
+int
+skin_save_profile(struct skin *skin, const char *csv)
+{
+	DEBUGMSG("skin_save_profile(\"%s\")", csv);
+	if ( skin->calibrating )
+		skin_calibrate_stop(skin);
+	profile_write(&skin->profile, csv);
+	return 1;
+}
+
 struct patch_profile *
 skin_get_patch_profile(struct skin *skin, int patch)
 {

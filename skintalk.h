@@ -13,7 +13,7 @@
 // Value of a single skin cell
 typedef double skincell_t;
 
-#define SKIN_PRESSURE_MAX 100
+#define SKIN_PRESSURE_MAX 1000
 
 struct skin_pressure {
 	double magnitude;
@@ -89,8 +89,8 @@ int skin_set_pressure_alpha(struct skin *skin, double alpha);
 void skin_calibrate_start(struct skin *skin);
 void skin_calibrate_stop(struct skin *skin);
 
-// Loads calibration profile from CSV file
 int skin_read_profile(struct skin *skin, const char *csv);
+int skin_save_profile(struct skin *skin, const char *csv);
 
 struct patch_profile *skin_get_patch_profile(struct skin *skin, int patch);
 

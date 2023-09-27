@@ -50,7 +50,7 @@ def parse_cmdline():
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
     parser.add_argument('--patch', '-p', type=int, default=1)
-    parser.add_argument('--profile', metavar='CSVFILE', default='profile.csv', help='dynamic range calibration from CSVFILE')
+    parser.add_argument('--profile', metavar='CSVFILE', default='octocan.calib', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
     parser.add_argument('--delay', type=float, default=0, help='delay between plot updates in milliseoncds')
@@ -227,10 +227,6 @@ def tessellate(sensor, patch):
     cell_to_poly = { cell_ids[i]: polys[vor.point_region[i]] for i in range(len(cell_ids)) }
     return cell_to_poly, lims
 
-def textbox_submit(sensor, patch, cell, text):
-    print("submit:", patch, cell, text)
-    plt.draw()
-
 def anim_init(sensor, patch):
     patch_layout = sensor.get_layout()[patch]
     num_cells = len(patch_layout)
@@ -241,7 +237,7 @@ def anim_init(sensor, patch):
     agg_rows = 1
     button_rows = 1
     total_rows = heat_rows + cellline_rows*num_cells + agg_rows + button_rows
-    fig = plt.figure(constrained_layout=False, figsize=(3, 0.4*total_rows), facecolor='w')#'lightgray')
+    fig = plt.figure(num="Patch %d" % patch, constrained_layout=False, figsize=(3, 0.4*total_rows), facecolor='w')#'lightgray')
     gs = fig.add_gridspec(
         nrows=total_rows, ncols=1,
         hspace=0.1, wspace=0, right=0.75,
@@ -260,9 +256,6 @@ def anim_init(sensor, patch):
     heat.set_ylim(*lims[:,1])
     heat.set_aspect('equal')
 
-    #margin = 0.05
-    #plt.subplots_adjust(left=margin, right=1-margin, bottom=margin, top=1-margin, wspace=0, hspace=0)
-
     norm = mpl.colors.Normalize(vmin=-100, vmax=100, clip=True)
     cmap = mpl.colors.LinearSegmentedColormap.from_list("cardinal", [
         [0.00, 'black'],
@@ -272,7 +265,6 @@ def anim_init(sensor, patch):
         [0.99, '#AD0000'],
         [1.00, 'black'],
     ])
-    #mapper = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
 
     cell_ids = sorted(list(cell_to_poly.keys()))
     polys = [ cell_to_poly[i] for i in cell_ids ]
@@ -300,15 +292,8 @@ def anim_init(sensor, patch):
         'cmap': cmap,
         'collection': collection,
         'cell_to_poly': cell_to_poly,
-        # 'history': history,
-        # 'history_pos': history_pos,
         'tare': tare_button,
-        # 'avg_ax': avg_ax,
         'avg_line': avg_line,
-        # 'uppers': uppers,
-        # 'lowers': lowers,
-        # 'avg_upper': avg_upper,
-        # 'avg_lower': avg_lower,
     }
     return fig
 
@@ -332,7 +317,49 @@ def calibrate(sensor, keep=True, show=True):
     time.sleep(4)
     sensor.calibrate_stop()
     print('Baseline calibration finished')
-            
+
+def save_profile(sensor):
+    print('Saving calibration profile to', cmdline.profile)
+    sensor.save_profile(cmdline.profile)
+    
+def tune_table(sensor, patch):
+    patch_layout = sensor.get_layout()[patch]
+    num_cells = len(patch_layout)
+    patch_profile = sensor.get_patch_profile(patch)
+    
+    fig = plt.figure(num="Tune", constrained_layout=False, figsize=(3, 0.4*(num_cells + 1)), facecolor='lightgray')
+    gs = fig.add_gridspec(
+        nrows=num_cells + 1, ncols=1,
+        hspace=0.1, wspace=0, right=0.85,
+        left=0.3, top=0.95, bottom=0.05,
+    )
+    cell_ids = sensor.get_cell_ids(patch)
+
+    def set_c1(cell, value_str, textbox):
+        try:
+            value = float(value_str)
+        except ValueError:
+            print("Invalid value:", value_str)
+            textbox.set_val(sensor.get_c1(patch, cell))
+            return
+        print("Set cell %d c1 = %g" % (cell, value))
+        sensor.set_c1(patch, cell, value)
+
+    text_boxes = []
+    for i, cell_id in enumerate(cell_ids):
+        ax = fig.add_subplot(gs[i, 0])
+        text_box = TextBox(ax, '%d ' % cell_id, initial=str(patch_profile['c1'][i]), textalignment='left')
+        text_box.label.set_fontsize(12)
+        text_box.on_submit(lambda x, cell=cell_id, tb=text_box: set_c1(cell, x, tb))
+        text_boxes.append(text_box)
+    save_ax = fig.add_subplot(gs[-1, 0])
+    save_button = Button(save_ax, 'Save to file') #\U0001F5AB #\u2193
+    save_button.label.set_fontsize(12)
+    save_button.on_clicked(lambda _, s=sensor: save_profile(s))
+    
+    return text_boxes, save_ax, save_button
+
+
 def main():
     global shutdown
     parse_cmdline()
@@ -350,7 +377,8 @@ def main():
 
     fig = anim_init(sensor, cmdline.patch)
     anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, interval=cmdline.delay)
-    
+
+    tt = tune_table(sensor, cmdline.patch)
     plt.show()
 
     shutdown = True

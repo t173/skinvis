@@ -17,10 +17,10 @@ struct profile {
 
 struct patch_profile {
 	int patch_id;
-
 	int num_cells;
-	int max_cell_id;
+
 	int *cell_idx;  // map cell ID to index of below arrays
+	int max_cell_id;
 	
 	// Baseline calibration
 	int *baseline;
@@ -37,8 +37,8 @@ struct patch_profile {
 #define pp_c1(pp, c)        ( (pp)->c1[(pp)->cell_idx[(c)]] )
 #define pp_c2(pp, c)        ( (pp)->c2[(pp)->cell_idx[(c)]] )
 
-// Reads calibration profile from CSV file into p
 int profile_read(struct profile *p, const char *csvfile);
+void profile_write(struct profile *p, const char *csvfile);
 
 // Zero baseline calibration values
 void profile_tare(struct profile *p);
