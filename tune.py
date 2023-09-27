@@ -58,6 +58,60 @@ def parse_cmdline():
     parser.add_argument('--noconfigure', action='store_true', help='do not configure serial')
     cmdline = parser.parse_args()
 
+cell_lbl_props = {
+    'color': 'dimgray',
+    'rotation': 0,
+    #'labelpad': 10,
+}
+
+class CellLine:
+    def __init__(self, ax, label, initial_value, color='k', **kwargs):
+        self.ax = ax
+        ax.axis('off') # gives 10x frame rate!!!
+        ax.set_xlim(0, cmdline.history)
+        self.values = np.full(cmdline.history, initial_value)
+        self.pos = 0
+        
+        self.line, = ax.plot(np.arange(cmdline.history), self.values, color=color, **kwargs)
+        x, y, width, height = ax.get_position().bounds
+
+        textcolor = 'dimgray'
+        margin = 0.05
+        self.cell_text = plt.figtext(x - margin, y + 0.5*height, label, ha='center', va='center', fontsize=12, color=textcolor)
+        self.upper_value = initial_value
+        self.lower_value = initial_value
+        upper_lbl = '%.0f' % initial_value
+        lower_lbl = '%.0f' % initial_value
+        hmargin = 0.01
+        vmargin = 0.005
+        self.upper_text = plt.figtext(x + width + hmargin, y + height - vmargin, upper_lbl, ha='left', va='top', color=textcolor)
+        self.lower_text = plt.figtext(x + width + hmargin, y + vmargin, lower_lbl, ha='left', va='bottom', color=textcolor)
+
+    def add(self, value):
+        self.values[self.pos] = value
+        self.pos += 1
+        self.pos %= len(self.values)
+        vmin = self.values.min()
+        vmax = self.values.max()
+        if vmax != self.upper_value:
+            self.upper_value = vmax
+            self.upper_text.set_text('%.0f' % vmax)
+        if vmin != self.lower_value:
+            self.lower_value = vmin
+            self.lower_text.set_text('%.0f' % vmin)
+        xdata, _ = self.line.get_data()
+        self.line.set_data(xdata, np.hstack([self.values[self.pos:], self.values[:self.pos]]))
+        self.ax.set_ylim(vmin, vmax)
+
+
+class AvgLine(CellLine):
+    def __init__(self, ax, label, initial_value, color='#AD0000', **kwargs):
+        super().__init__(ax, label, initial_value, color, **kwargs)
+        
+    def add(self, values):
+        super().add(np.mean(values))
+
+
 def setup_octocan():
     # Find octocan device
     device_found = False
@@ -228,48 +282,13 @@ def anim_init(sensor, patch):
     collection.set_array(state)
     heat.add_collection(collection)
 
-    history = np.zeros((num_cells + 1, cmdline.history))
-    history_pos = 0
-    history[:num_cells, history_pos] = state
-    history[-1, history_pos] = history[:num_cells, history_pos].mean()
-
     for cell_id in patch_layout:
         pos = patch_layout[cell_id]
         heat.text(pos[0], pos[1], str(cell_id), ha='center', va='center', color='gray', fontsize=14)
 
-    cell_lines = []
     cell_labels = sensor.get_cell_ids(patch)
-    
-    cell_lbl_props = {
-        'color': 'dimgray',
-        'rotation': 0,
-        #'labelpad': 10,
-    }
-
-    def configure_ax(ax, lbl, values, **kwargs):
-        ax.axis('off') # gives 10x frame rate!!!
-        ax.set_xlim(0, cmdline.history)
-        line, = ax.plot(np.arange(cmdline.history), values, **kwargs)
-        x, y, width, height = ax.get_position().bounds
-        margin = 0.05
-        plt.figtext(x - margin, y + 0.5*height, lbl, ha='center', va='center', fontsize=12, **cell_lbl_props)
-        upper_lbl = '%.0f' % values.max()
-        lower_lbl = '%.0f' % values.min()
-        hmargin = 0.01
-        vmargin = 0.005
-        upper = plt.figtext(x + width + hmargin, y + height - vmargin, upper_lbl, ha='left', va='top', **cell_lbl_props)
-        lower = plt.figtext(x + width + hmargin, y + vmargin, lower_lbl, ha='left', va='bottom', **cell_lbl_props)
-        return line, upper, lower
-
-    cell_lines = []
-    lowers = []
-    uppers = []
-    for i, ax in enumerate(cell_axs):
-        line, upper, lower = configure_ax(ax, cell_labels[i], history[i, :], color='k')
-        cell_lines.append(line)
-        uppers.append(upper)
-        lowers.append(lower)
-    avg_line, avg_upper, avg_lower = configure_ax(avg_ax, 'x\u0305', history[-1, :], color='#ad0000')
+    cell_lines = [ CellLine(ax, cell_labels[i], state[i]) for i, ax in enumerate(cell_axs) ]
+    avg_line = AvgLine(avg_ax, 'x\u0305', np.mean(state))
 
     global args
     args = {
@@ -281,15 +300,15 @@ def anim_init(sensor, patch):
         'cmap': cmap,
         'collection': collection,
         'cell_to_poly': cell_to_poly,
-        'history': history,
-        'history_pos': history_pos,
+        # 'history': history,
+        # 'history_pos': history_pos,
         'tare': tare_button,
-        'avg_ax': avg_ax,
+        # 'avg_ax': avg_ax,
         'avg_line': avg_line,
-        'uppers': uppers,
-        'lowers': lowers,
-        'avg_upper': avg_upper,
-        'avg_lower': avg_lower,
+        # 'uppers': uppers,
+        # 'lowers': lowers,
+        # 'avg_upper': avg_upper,
+        # 'avg_lower': avg_lower,
     }
     return fig
 
@@ -298,36 +317,12 @@ def anim_update(frame):
     patch = args['patch']
 
     state = args['sensor'].get_patch_state(patch)
-    args['history'][:-1, args['history_pos']] = state
-    args['history'][-1, args['history_pos']] = args['history'][:-1, args['history_pos']].mean()
     args['collection'].set_array(state)
 
-    args['history_pos'] = (args['history_pos'] + 1) % cmdline.history
-    pos = args['history_pos']
-    for c in range(len(args['cell_lines'])):
-        h = args['history'][c, :]
-        line = args['cell_lines'][c]
-        xdata, ydata = line.get_data()
-        hmin = h.min()
-        hmax = h.max()
-        line.set_data(xdata, np.hstack([h[pos:], h[:pos]]))
-        if hmin == hmax:
-            hmin -= 100
-            hmax += 100
-        args['cell_axs'][c].set_ylim(hmin, hmax)
-        args['uppers'][c].set_text('%.0f' % hmax)
-        args['lowers'][c].set_text('%.0f' % hmin)
-
-    avg = args['history'][-1, :]
-    avg_line = args['avg_line']
-    xdata, ydata = avg_line.get_data()
-    avg_line.set_data(xdata, np.hstack([avg[pos:], avg[:pos]]))
-    avg_min = avg.min()
-    avg_max = avg.max()
-    args['avg_ax'].set_ylim(avg_min, avg_max)
-    args['avg_upper'].set_text('%.0f' % avg_max)
-    args['avg_lower'].set_text('%.0f' % avg_min)
-
+    for i, cl in enumerate(args['cell_lines']):
+        cl.add(state[i])
+    args['avg_line'].add(state)
+    
     global total_frames
     total_frames += 1
 
