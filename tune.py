@@ -145,7 +145,12 @@ class AvgLine(CellLine):
         super().__init__(sensor, ax, label, initial_value, color, **kwargs)
         
     def add(self, values):
-        super().add(np.mean(values))
+        super().add(self.sensor.get_patch_mean(cmdline.patch))
+
+class PressureLine(CellLine):
+    def __init__(self, sensor, ax, label, initial_value, color='cadetblue', **kwargs):
+        super().__init__(sensor, ax, label, initial_value, color, **kwargs)
+
 
 class ParamEditor:
     def __init__(self, sensor, ax, cell, cell_line):
@@ -346,7 +351,7 @@ def anim_init(sensor, patch):
 
     heat_rows = 6
     cellline_rows = 1
-    agg_rows = 1
+    agg_rows = 2
     button_rows = 1
     total_rows = heat_rows + cellline_rows*num_cells + agg_rows + button_rows
     fig = plt.figure(num="Patch %d" % patch, constrained_layout=False, figsize=(3, 0.4*total_rows), facecolor='w')#'lightgray')
@@ -358,6 +363,7 @@ def anim_init(sensor, patch):
     heat = fig.add_subplot(gs[:heat_rows, 0])
     cell_axs = [fig.add_subplot(gs[heat_rows + i*cellline_rows, 0]) for i in range(num_cells)]
     avg_ax = fig.add_subplot(gs[heat_rows + num_cells*cellline_rows, 0])
+    pressure_ax = fig.add_subplot(gs[heat_rows + num_cells*cellline_rows + 1, 0])
     tare_ax = fig.add_subplot(gs[-button_rows, 0])
     tare_button = Button(tare_ax, 'Tare')
     tare_button.label.set_fontsize(14)
@@ -396,12 +402,17 @@ def anim_init(sensor, patch):
     avg_line = AvgLine(sensor, avg_ax, 'x\u0305', np.mean(state))
     avg_line.target = sensor.get_target_pressure()/num_cells
 
+    magnitude, _, _ = sensor.get_patch_pressure(patch)
+    pressure_line = PressureLine(sensor, pressure_ax, 'M', magnitude)
+    
     tx, ty, tw, th = tare_ax.get_position().bounds
     mode_ax = fig.add_axes([tx + tw, ty, 2*th, th])
     mode_button = Button(mode_ax, '\u2195')
     mode_button.label.set_fontsize(16)
     mode_button.on_clicked(lambda _, cl=cell_lines + [avg_line]: toggle_mode(cl))
 
+    circle = heat.scatter([0], [0], s=1, zorder=10, edgecolor='cadetblue', facecolor=None, lw=2, alpha=0.8)
+    
     global args
     args = {
         'sensor': sensor,
@@ -415,20 +426,33 @@ def anim_init(sensor, patch):
         'avg_line': avg_line,
         'tare_button': tare_button,
         'mode_button': mode_button,
+        'circle': circle,
+        'pressure_line': pressure_line,
     }
     return fig
 
 def anim_update(frame):
     global args
     patch = args['patch']
+    sensor = args['sensor']
 
-    state = args['sensor'].get_patch_state(patch)
+    state = sensor.get_patch_state(patch)
     args['collection'].set_array(state)
 
     for i, cl in enumerate(args['cell_lines']):
         cl.add(state[i])
     args['avg_line'].add(state)
+
+    magnitude, x, y = sensor.get_patch_pressure(patch)
+    args['pressure_line'].add(magnitude)
     
+    circle = args['circle']
+    circle.set_offsets([x, y])
+    if magnitude < 10:
+        circle.set_sizes([0.001])
+    else:
+        circle.set_sizes([max(1, 2*magnitude)])
+
     global total_frames
     total_frames += 1
 

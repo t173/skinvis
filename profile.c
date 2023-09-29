@@ -196,7 +196,7 @@ profile_init(struct profile *p)
 static void
 profile_enlarge(struct profile *p, int new_max)
 {
-	if ( !p || new_max <= p->max_patch_id )
+	if ( !p || new_max < p->max_patch_id )
 		return;
 	REALLOCN(p->patch, new_max);
 	REALLOCN(p->patch_idx, new_max);

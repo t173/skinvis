@@ -421,6 +421,15 @@ Skin_get_target_pressure(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
 	return Py_BuildValue("d", (double)SKIN_PRESSURE_MAX);
 }
 
+static PyObject *
+Skin_get_patch_mean(SkinObject *self, PyObject *args) {
+	int patch;
+	if ( !self || !PyArg_ParseTuple(args, "i", &patch) ) {
+		return NULL;
+	}
+	return Py_BuildValue("d", (double)skin_get_patch_mean(&self->skin, patch));
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -445,6 +454,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "get_c1", (PyCFunction)Skin_get_c1, METH_VARARGS, "Gets c1 parameter for specific patch and cell" },
 	{ "set_c1", (PyCFunction)Skin_set_c1, METH_VARARGS, "Sets c1 parameter for specific patch and cell" },
 	{ "get_target_pressure", (PyCFunction)Skin_get_target_pressure, METH_NOARGS, "Gets target pressure value" },
+	{ "get_patch_mean", (PyCFunction)Skin_get_patch_mean, METH_VARARGS, "Gets the mean value of cells on a patch" },
 	{ NULL }
 };
 

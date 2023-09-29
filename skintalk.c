@@ -565,6 +565,15 @@ skin_save_profile(struct skin *skin, const char *csv)
 	return 1;
 }
 
+struct patch_layout *
+skin_get_patch_layout(struct skin *skin, int patch)
+{
+	if ( !skin || patch < 0 || patch > skin->layout.max_patch_id ) {
+		return NULL;
+	}
+	return &skin->layout.patch[skin->layout.patch_idx[patch]];
+}
+
 struct patch_profile *
 skin_get_patch_profile(struct skin *skin, int patch)
 {
@@ -597,8 +606,7 @@ skin_get_calibration(struct skin *skin, int patch, int cell)
 int
 skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)
 {
-	const struct patch_layout *pl = &skin->layout.patch[skin->layout.patch_idx[patch]];
-
+	const struct patch_layout *pl = skin_get_patch_layout(skin, patch);
 	pthread_mutex_lock(&skin->lock);
 	for ( int c=0; c < pl->num_cells; c++ ) {
 		dst[c] = skin_cell(skin, patch, pl->cell_id[c]);
@@ -610,24 +618,24 @@ skin_get_patch_state(struct skin *skin, int patch, skincell_t *dst)
 int
 skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 {
-	const int num_cells = skin->total_cells;
+	const struct patch_layout *pl = skin_get_patch_layout(skin, patch);
+	const int num_cells = pl->num_cells;
 	skincell_t state[num_cells];
 	struct skin_pressure p = {};
+
 	skin_get_patch_state(skin, patch, state);
 	skincell_t sum = 0;
-	for ( int c=0; c<num_cells; c++ ) {
-		if ( state[c] > SKIN_PRESSURE_MAX )
+	for ( int c=0; c < num_cells; c++ ) {
+		if ( state[c] > SKIN_PRESSURE_MAX ) {
 			state[c] = SKIN_PRESSURE_MAX;
+		} else if ( state[c] < 0 ) {
+			state[c] = 0;
+		}
 		state[c] /= SKIN_PRESSURE_MAX;
 		sum += state[c];
 	}
-	//p.magnitude = p.magnitude < 0 ? -p.magnitude : p.magnitude;
-	if ( sum < 0 ) {
-		sum = -sum;
-	}
-	
-	struct patch_layout *pl = &skin->layout.patch[patch];
-	for ( int c=0; c<pl->num_cells; c++ ) {
+
+	for ( int c=0; c < num_cells; c++ ) {
 		const double norm = sum == 0 ? 0 : state[c]/sum;
 		p.x += norm*pl->x[c];
 		p.y += norm*pl->y[c];
@@ -635,13 +643,30 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 	p.magnitude = sum*SKIN_PRESSURE_MAX;
 	p.x = p.x < pl->xmin ? pl->xmin : (p.x > pl->xmax ? pl->xmax : p.x);
 	p.y = p.y < pl->ymin ? pl->ymin : (p.y > pl->ymax ? pl->ymax : p.y);
-	exp_avg(&skin->pressure[patch].magnitude, p.magnitude, skin->pressure_alpha);
-	exp_avg(&skin->pressure[patch].x, p.x, skin->pressure_alpha);
-	exp_avg(&skin->pressure[patch].y, p.y, skin->pressure_alpha);
-	memcpy(dst, &skin->pressure[patch], sizeof(skin->pressure[patch]));
+
+	struct skin_pressure *sp = &skin->pressure[skin->layout.patch_idx[patch]];
+	exp_avg(&sp->magnitude, p.magnitude, skin->pressure_alpha);
+	exp_avg(&sp->x, p.x, skin->pressure_alpha);
+	exp_avg(&sp->y, p.y, skin->pressure_alpha);
+	memcpy(dst, sp, sizeof(*sp));
 	return 1;
 }
 
+
+skincell_t
+skin_get_patch_mean(struct skin *skin, int patch)
+{
+	const struct patch_layout *pl = skin_get_patch_layout(skin, patch);
+	skincell_t sum = 0;
+
+	pthread_mutex_lock(&skin->lock);
+	for ( int c=0; c < pl->num_cells; c++ ) {
+		sum += skin_cell(skin, patch, pl->cell_id[c]);
+	}
+	pthread_mutex_unlock(&skin->lock);
+
+	return sum/pl->num_cells;
+}
 
 enum addr_check
 address_check(struct skin *skin, int patch, int cell)
