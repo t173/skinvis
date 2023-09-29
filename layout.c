@@ -152,8 +152,8 @@ layout_read(struct layout *lo, const char *csvfile)
 	}  // each line
 
 	// Build map of patch_id to index of lo->patch (<0 invalid)
-	ALLOCN(lo->patch_idx, lo->max_patch_id);
-	for ( int i=0; i<lo->max_patch_id; i++ ) {
+	ALLOCN(lo->patch_idx, lo->max_patch_id + 1);
+	for ( int i=0; i<=lo->max_patch_id; i++ ) {
 		lo->patch_idx[i] = -1;
 	}
 	for ( int p=0, pidx=0; p<lo->num_patches; p++ ) {
