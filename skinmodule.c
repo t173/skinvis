@@ -416,6 +416,11 @@ Skin_set_c1(SkinObject *self, PyObject *args) {
 	return Py_None;
 }
 
+static PyObject *
+Skin_get_target_pressure(SkinObject *self, PyObject *Py_UNUSED(ignored)) {
+	return Py_BuildValue("d", (double)SKIN_PRESSURE_MAX);
+}
+
 static PyMethodDef Skin_methods[] = {
 //	{ "get_device", (PyCFunction)Skin_get_device, METH_NOARGS, "gets the associated device" },
 	{ "start", (PyCFunction)Skin_start, METH_NOARGS, "Starts reading from the skin sensor device" },
@@ -439,6 +444,7 @@ static PyMethodDef Skin_methods[] = {
 	{ "get_record_tally", (PyCFunction)Skin_get_record_tally, METH_NOARGS, "Gets tallies of valid and invalid records, based on error" },
 	{ "get_c1", (PyCFunction)Skin_get_c1, METH_VARARGS, "Gets c1 parameter for specific patch and cell" },
 	{ "set_c1", (PyCFunction)Skin_set_c1, METH_VARARGS, "Sets c1 parameter for specific patch and cell" },
+	{ "get_target_pressure", (PyCFunction)Skin_get_target_pressure, METH_NOARGS, "Gets target pressure value" },
 	{ NULL }
 };
 

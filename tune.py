@@ -65,12 +65,16 @@ cell_lbl_props = {
 }
 
 class CellLine:
-    def __init__(self, ax, label, initial_value, color='k', **kwargs):
+    def __init__(self, sensor, ax, label, initial_value, color='k', **kwargs):
         self.ax = ax
         ax.axis('off') # gives 10x frame rate!!!
         ax.set_xlim(0, cmdline.history)
         self.values = np.full(cmdline.history, initial_value)
+        self.sensor = sensor
         self.pos = 0
+        self.automode = True
+        self.editor = None
+        self.target = sensor.get_target_pressure()
         
         self.line, = ax.plot(np.arange(cmdline.history), self.values, color=color, **kwargs)
         x, y, width, height = ax.get_position().bounds
@@ -91,26 +95,124 @@ class CellLine:
         self.values[self.pos] = value
         self.pos += 1
         self.pos %= len(self.values)
-        vmin = self.values.min()
-        vmax = self.values.max()
-        if vmax != self.upper_value:
-            self.upper_value = vmax
-            self.upper_text.set_text('%.0f' % vmax)
-        if vmin != self.lower_value:
-            self.lower_value = vmin
-            self.lower_text.set_text('%.0f' % vmin)
+        self.update_minmax()
         xdata, _ = self.line.get_data()
-        self.line.set_data(xdata, np.hstack([self.values[self.pos:], self.values[:self.pos]]))
-        self.ax.set_ylim(vmin, vmax)
+        ydata = np.hstack([self.values[self.pos:], self.values[:self.pos]])
+        if not self.automode:
+            ydata = np.clip(ydata, 0, self.target)
+        self.line.set_data(xdata, ydata)
+        if self.editor:
+            self.editor.update(value)
+
+    def fmt(self, value):
+        return '%.0f' % value
+        
+    def update_minmax(self):
+        if self.automode:
+            vmin = self.values.min()
+            vmax = self.values.max()
+            if vmax != self.upper_value:
+                self.upper_value = vmax
+                self.upper_text.set_text(self.fmt(vmax))
+            if vmin != self.lower_value:
+                self.lower_value = vmin
+                self.lower_text.set_text(self.fmt(vmin))
+            self.ax.set_ylim(vmin, vmax)
+
+    def install(self, ed):
+        self.editor = ed
+            
+    def uninstall(self):
+        self.editor = None
+            
+    def set_auto_mode(self):
+        self.automode = True
+        self.update_minmax()
+    
+    def set_target_mode(self):
+        self.automode = False
+        low = 0
+        high = self.target
+        self.lower_value = low
+        self.upper_value = high
+        self.lower_text.set_text(self.fmt(low))
+        self.upper_text.set_text(self.fmt(high))
+        self.ax.set_ylim(low, high)
 
 
 class AvgLine(CellLine):
-    def __init__(self, ax, label, initial_value, color='#AD0000', **kwargs):
-        super().__init__(ax, label, initial_value, color, **kwargs)
+    def __init__(self, sensor, ax, label, initial_value, color='#AD0000', **kwargs):
+        super().__init__(sensor, ax, label, initial_value, color, **kwargs)
         
     def add(self, values):
         super().add(np.mean(values))
 
+class ParamEditor:
+    def __init__(self, sensor, ax, cell, cell_line):
+        self.sensor = sensor
+        self.patch_profile = sensor.get_patch_profile(cmdline.patch)
+        self.ax = ax
+        self.cell = cell
+        initval = self.patch_profile['c1'][cell]
+        self.textbox = TextBox(ax, '%d' % cell, initial=str(initval), label_pad=0.05, textalignment='left')
+        self.textbox.label.set_fontsize(12)
+        self.textbox.on_submit(self.set_c1)
+        self.mx_mode = False
+        self.target = sensor.get_target_pressure()
+        self.cell_line = cell_line
+
+        x, y, w, h = ax.get_position().bounds
+        mx_ax = ax.get_figure().add_axes([x + w, y, h, h])
+        self.mx_button = Button(mx_ax, '\u224F')#'\u229E')
+        self.mx_button.label.set_fontsize(18)
+        self.mx_button.on_clicked(lambda _: self.toggle_mx())
+
+    def set_c1(self, value_str):
+        try:
+            value = float(value_str)
+            self.sensor.set_c1(cmdline.patch, self.cell, value)
+            print("Set cell %d c1 = %g" % (self.cell, value))
+        except ValueError:
+            print("Invalid value:", value_str)
+        self.textbox.set_val(self.sensor.get_c1(cmdline.patch, self.cell))
+
+    def enter_mx(self):
+        self.cell_line.install(self)
+        self.textbox.color = '#AD6666'
+        self.textbox.hovercolor = '#AD0000'
+        self.mx_mode = True
+        self.mx_max = 0
+        self.textbox.stop_typing()
+        #self.textbox.active = False
+
+    def exit_mx(self):
+        self.cell_line.uninstall()
+        old_c1 = self.sensor.get_c1(cmdline.patch, self.cell)
+        sign = -1 if old_c1 < 0 else 1
+        c1 = sign*self.target/self.mx_max
+        self.set_c1(c1)
+        self.textbox.color = '0.95'
+        self.textbox.hovercolor = '1'
+        self.mx_mode = False
+        #self.textbox.active = True
+
+    def update(self, value):
+        """
+        Receive value from associated CellLine
+        """
+        if self.mx_mode and value > self.mx_max:
+            self.mx_max = value
+        
+    def toggle_mx(self):
+        """
+        mx_mode is where we use the maximum value for automatically setting gain
+        """
+        if self.mx_mode:
+            self.exit_mx()
+        else:
+            self.enter_mx()
+        #self.ax.get_figure().canvas.draw_idle()
+        #self.ax.redraw_in_frame()
 
 def setup_octocan():
     # Find octocan device
@@ -227,6 +329,16 @@ def tessellate(sensor, patch):
     cell_to_poly = { cell_ids[i]: polys[vor.point_region[i]] for i in range(len(cell_ids)) }
     return cell_to_poly, lims
 
+in_auto_mode = True
+def toggle_mode(cell_lines):
+    global in_auto_mode
+    in_auto_mode = not in_auto_mode
+    for cl in cell_lines:
+        if in_auto_mode:
+            cl.set_auto_mode()
+        else:
+            cl.set_target_mode()
+
 def anim_init(sensor, patch):
     patch_layout = sensor.get_layout()[patch]
     num_cells = len(patch_layout)
@@ -256,7 +368,8 @@ def anim_init(sensor, patch):
     heat.set_ylim(*lims[:,1])
     heat.set_aspect('equal')
 
-    norm = mpl.colors.Normalize(vmin=-100, vmax=100, clip=True)
+    target_pressure = sensor.get_target_pressure()
+    norm = mpl.colors.Normalize(vmin=-target_pressure, vmax=target_pressure, clip=True)
     cmap = mpl.colors.LinearSegmentedColormap.from_list("cardinal", [
         [0.00, 'black'],
         [0.01, '#AD0000'],
@@ -279,8 +392,15 @@ def anim_init(sensor, patch):
         heat.text(pos[0], pos[1], str(cell_id), ha='center', va='center', color='gray', fontsize=14)
 
     cell_labels = sensor.get_cell_ids(patch)
-    cell_lines = [ CellLine(ax, cell_labels[i], state[i]) for i, ax in enumerate(cell_axs) ]
-    avg_line = AvgLine(avg_ax, 'x\u0305', np.mean(state))
+    cell_lines = [ CellLine(sensor, ax, cell_labels[i], state[i]) for i, ax in enumerate(cell_axs) ]
+    avg_line = AvgLine(sensor, avg_ax, 'x\u0305', np.mean(state))
+    avg_line.target = sensor.get_target_pressure()/num_cells
+
+    tx, ty, tw, th = tare_ax.get_position().bounds
+    mode_ax = fig.add_axes([tx + tw, ty, 2*th, th])
+    mode_button = Button(mode_ax, '\u2195')
+    mode_button.label.set_fontsize(16)
+    mode_button.on_clicked(lambda _, cl=cell_lines + [avg_line]: toggle_mode(cl))
 
     global args
     args = {
@@ -292,8 +412,9 @@ def anim_init(sensor, patch):
         'cmap': cmap,
         'collection': collection,
         'cell_to_poly': cell_to_poly,
-        'tare': tare_button,
         'avg_line': avg_line,
+        'tare_button': tare_button,
+        'mode_button': mode_button,
     }
     return fig
 
@@ -321,43 +442,34 @@ def calibrate(sensor, keep=True, show=True):
 def save_profile(sensor):
     print('Saving calibration profile to', cmdline.profile)
     sensor.save_profile(cmdline.profile)
-    
-def tune_table(sensor, patch):
+
+def tune_table(sensor, cell_lines, patch):
     patch_layout = sensor.get_layout()[patch]
     num_cells = len(patch_layout)
     patch_profile = sensor.get_patch_profile(patch)
     
-    fig = plt.figure(num="Tune", constrained_layout=False, figsize=(3, 0.4*(num_cells + 1)), facecolor='lightgray')
+    fig = plt.figure(num="Tune Patch %d" % cmdline.patch, constrained_layout=False,
+                     figsize=(3, 0.4*(num_cells + 1)), facecolor='lightgray')
     gs = fig.add_gridspec(
         nrows=num_cells + 1, ncols=1,
-        hspace=0.1, wspace=0, right=0.85,
-        left=0.3, top=0.95, bottom=0.05,
+        hspace=0.1, wspace=0, right=0.8,
+        left=0.2, top=0.95, bottom=0.05,
     )
     cell_ids = sensor.get_cell_ids(patch)
 
-    def set_c1(cell, value_str, textbox):
-        try:
-            value = float(value_str)
-        except ValueError:
-            print("Invalid value:", value_str)
-            textbox.set_val(sensor.get_c1(patch, cell))
-            return
-        print("Set cell %d c1 = %g" % (cell, value))
-        sensor.set_c1(patch, cell, value)
-
-    text_boxes = []
+    editors = []
     for i, cell_id in enumerate(cell_ids):
         ax = fig.add_subplot(gs[i, 0])
-        text_box = TextBox(ax, '%d ' % cell_id, initial=str(patch_profile['c1'][i]), textalignment='left')
-        text_box.label.set_fontsize(12)
-        text_box.on_submit(lambda x, cell=cell_id, tb=text_box: set_c1(cell, x, tb))
-        text_boxes.append(text_box)
+        editor = ParamEditor(sensor, ax, cell_id, cell_lines[i])
+        cell_lines[i].install(editor)
+        editors.append(editor)
+        
     save_ax = fig.add_subplot(gs[-1, 0])
     save_button = Button(save_ax, 'Save to file') #\U0001F5AB #\u2193
     save_button.label.set_fontsize(12)
     save_button.on_clicked(lambda _, s=sensor: save_profile(s))
     
-    return text_boxes, save_ax, save_button
+    return editors, save_ax, save_button
 
 
 def main():
@@ -371,14 +483,16 @@ def main():
     stats_thread = threading.Thread(target=stats_updater, args=(sensor, None))
     stats_thread.start()
 
+    print(sensor.get_target_pressure())
     sensor.start()
     if not cmdline.nocalibrate:
         calibrate(sensor)
 
+    global args
     fig = anim_init(sensor, cmdline.patch)
     anim = animation.FuncAnimation(fig, cache_frame_data=False, func=anim_update, interval=cmdline.delay)
 
-    tt = tune_table(sensor, cmdline.patch)
+    tt = tune_table(sensor, args['cell_lines'], cmdline.patch)
     plt.show()
 
     shutdown = True
