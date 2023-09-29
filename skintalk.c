@@ -635,22 +635,25 @@ skin_get_patch_pressure(struct skin *skin, int patch, struct skin_pressure *dst)
 	skincell_t sum = 0;
 	for ( int c=0; c < num_cells; c++ ) {
 		if ( state[c] > SKIN_PRESSURE_MAX ) {
-			state[c] = SKIN_PRESSURE_MAX;
+			state[c] = 1;
 		} else if ( state[c] < 0 ) {
 			state[c] = 0;
+		} else {
+			state[c] /= SKIN_PRESSURE_MAX;
 		}
-		state[c] /= SKIN_PRESSURE_MAX;
 		sum += state[c];
 	}
 
-	for ( int c=0; c < num_cells; c++ ) {
-		const double norm = sum == 0 ? 0 : state[c]/sum;
-		p.x += norm*pl->x[c];
-		p.y += norm*pl->y[c];
+	if ( sum != 0 ) {
+		for ( int c=0; c < num_cells; c++ ) {
+			const double norm = state[c]/sum;
+			p.x += norm*pl->x[c];
+			p.y += norm*pl->y[c];
+		}
+		p.magnitude = sum*SKIN_PRESSURE_MAX;
+		p.x = p.x < pl->xmin ? pl->xmin : (p.x > pl->xmax ? pl->xmax : p.x);
+		p.y = p.y < pl->ymin ? pl->ymin : (p.y > pl->ymax ? pl->ymax : p.y);
 	}
-	p.magnitude = sum*SKIN_PRESSURE_MAX;
-	p.x = p.x < pl->xmin ? pl->xmin : (p.x > pl->xmax ? pl->xmax : p.x);
-	p.y = p.y < pl->ymin ? pl->ymin : (p.y > pl->ymax ? pl->ymax : p.y);
 
 	struct skin_pressure *sp = &skin->pressure[skin->layout.patch_idx[patch]];
 	exp_avg(&sp->magnitude, p.magnitude, skin->pressure_alpha);

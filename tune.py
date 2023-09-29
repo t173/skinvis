@@ -400,7 +400,7 @@ def anim_init(sensor, patch):
     cell_labels = sensor.get_cell_ids(patch)
     cell_lines = [ CellLine(sensor, ax, cell_labels[i], state[i]) for i, ax in enumerate(cell_axs) ]
     avg_line = AvgLine(sensor, avg_ax, 'x\u0305', np.mean(state))
-    avg_line.target = sensor.get_target_pressure()/num_cells
+    avg_line.target = sensor.get_target_pressure()
 
     magnitude, _, _ = sensor.get_patch_pressure(patch)
     pressure_line = PressureLine(sensor, pressure_ax, 'M', magnitude)
