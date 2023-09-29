@@ -571,7 +571,11 @@ skin_get_patch_layout(struct skin *skin, int patch)
 	if ( !skin || patch < 0 || patch > skin->layout.max_patch_id ) {
 		return NULL;
 	}
-	return &skin->layout.patch[skin->layout.patch_idx[patch]];
+	int index = skin->layout.patch_idx[patch];
+	if ( index < 0 ) {
+		return NULL;
+	}
+	return &skin->layout.patch[index];
 }
 
 struct patch_profile *
@@ -580,7 +584,11 @@ skin_get_patch_profile(struct skin *skin, int patch)
 	if ( !skin || patch < 0 || patch > skin->profile.max_patch_id ) {
 		return NULL;
 	}
-	return skin->profile.patch[skin->profile.patch_idx[patch]];
+	int index = skin->profile.patch_idx[patch];
+	if ( index < 0 ) {
+		return NULL;
+	}
+	return skin->profile.patch[index];
 }
 
 skincell_t
