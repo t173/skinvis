@@ -23,18 +23,12 @@
 #include "profile.h"
 #include "layout.h"
 
-#define STOP_CODE   '0'  // stop octocan
-#define START1_CODE '1'  // start with original protocol
-#define START2_CODE '2'  // start, but including sequence numbers
+#define STOP_CODE  "STOP\r\n"
+#define START_CODE "LOG1\r\n"
+#define BLANK_CODE "\r\n"
+#define CALIB_CODE "CAL\r\n"
 
-#define START_CODE START1_CODE
-
-// Size of a cell record in bytes
-#if START_CODE == START2_CODE
-#define RECORD_SIZE 9
-#else
 #define RECORD_SIZE 5
-#endif
 
 // Size of read buffer
 //#define BUFFER_SIZE 4096
@@ -73,29 +67,6 @@ get_time(struct timespec *dst)
 	if ( clock_gettime(CLOCK_REALTIME, dst) < 0 && !warned ) {
 		WARNING("clock_gettime() failed: %s", strerror(errno));
 		warned = 1;
-	}
-}
-
-static void
-transmit_char(int fd, char code)
-{
-	/* fd_set set; */
-	/* static struct timeval timeout = { */
-	/* 	.tv_sec = 3, */
-	/* 	.tv_usec = 0 */
-	/* }; */
-	/* int ret; */
-	/* FD_ZERO(&set); */
-	/* FD_SET(fd, &set); */
-
-	/* ret = select(1, NULL, &set, NULL, &timeout); */
-	/* if ( ret < 0 ) { */
-	/* 	FATAL("select(2) error: %s", strerror(errno)); */
-	/* } else if ( ret == 0 ) { */
-	/* 	WARNING("Timed out while writing to device"); */
-	/* } else */
-	if ( write(fd, &code, 1) < 0 ) {
-		WARNING("Cannot write to device");
 	}
 }
 
@@ -329,6 +300,14 @@ skin_cell_write(struct skin *skin, int patch, int cell, int32_t rawvalue)
 	}
 }
 
+static void
+write_code(struct skin *skin, const char *s)
+{
+	if ( write(skin->device_fd, s, strlen(s)) < 0 ) {
+		WARNING("Cannot write to device");
+	}
+}
+
 // pthread function, reads from serial
 static void *
 skin_reader(void *args)
@@ -338,8 +317,13 @@ skin_reader(void *args)
 	uint8_t buffer[BUFFER_SIZE];
 	struct skin_record record;
 
-	transmit_char(skin->device_fd, STOP_CODE);
-	transmit_char(skin->device_fd, START_CODE);
+	write_code(skin, STOP_CODE);
+	write_code(skin, BLANK_CODE);
+	sleep(1);
+	write_code(skin, CALIB_CODE);
+	write_code(skin, BLANK_CODE);
+	sleep(1);
+	write_code(skin, START_CODE);
 	skin->total_bytes += read_bytes(skin, buffer, BUFFER_SIZE);
 
 	int advanced = 0;
@@ -398,7 +382,7 @@ skin_reader(void *args)
 			//pthread_mutex_unlock(&skin->lock);
 		}
 	}
-	transmit_char(skin->device_fd, STOP_CODE);
+	write_code(skin, STOP_CODE);
 	if ( skin->log ) {
 		fflush(skin->log);
 	}

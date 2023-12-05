@@ -27,8 +27,8 @@ import skin
 mpl.rcParams['toolbar'] = 'None'
 
 # List of devices to try (if not given on cmdline)
-devices = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1']
-baud_rate = 2000000  # default, overrideable at cmdline
+devices = ['/dev/ttyACM0', '/dev/ttyACM1']
+baud_rate = 115200  # default, overrideable at cmdline
 
 shutdown = False
 total_frames = 0
@@ -45,12 +45,12 @@ def parse_cmdline():
     global cmdline
     parser = argparse.ArgumentParser()
     parser.add_argument('--device')
-    parser.add_argument('--layout', default="octocan.layout")
+    parser.add_argument('--layout', default="octocan3_test.layout")
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
     parser.add_argument('--patch', '-p', type=int, default=1)
-    parser.add_argument('--profile', metavar='CSVFILE', default='octocan.calib', help='dynamic range calibration from CSVFILE')
+    parser.add_argument('--profile', metavar='CSVFILE', default='octocan3_test.calib', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
     parser.add_argument('--delay', type=float, default=0, help='delay between plot updates in milliseoncds')
