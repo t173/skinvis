@@ -45,16 +45,16 @@ def parse_cmdline():
     global cmdline
     parser = argparse.ArgumentParser()
     parser.add_argument('--device')
-    parser.add_argument('--layout', default="octocan3_test.layout")
+    parser.add_argument('--layout', default="arna.layout")
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
     parser.add_argument('--patch', '-p', type=int, default=1)
-    parser.add_argument('--profile', metavar='CSVFILE', default='octocan3_test.calib', help='dynamic range calibration from CSVFILE')
+    parser.add_argument('--profile', metavar='CSVFILE', default='arna.calib', help='dynamic range calibration from CSVFILE')
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
     parser.add_argument('--delay', type=float, default=0, help='delay between plot updates in milliseoncds')
-    parser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
+    parser.add_argument('--nocalibrate', default=True, action='store_true', help='do not perform baseline calibration on startup')
     parser.add_argument('--noconfigure', action='store_true', help='do not configure serial')
     cmdline = parser.parse_args()
 
@@ -239,9 +239,7 @@ def setup_octocan():
     if not cmdline.noconfigure:
         print("Configuring", device)
         try:
-            run_stty('raw')
-            run_stty('-echo', '-echoe', '-echok')
-            run_stty(str(cmdline.baud))
+            run_stty('raw', '-echo', '-echoe', '-echok', str(cmdline.baud))
         except subprocess.CalledProcessError:
             print("Error configuring", device, file=sys.stderr)
             sys.exit(1)
