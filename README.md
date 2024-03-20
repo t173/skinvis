@@ -22,9 +22,9 @@ $ python3 skinvis.py -p /dev/ttyUSB0
 ## Notes for Ubuntu
 It is usually preferable to install python packages using your Linux distribution's package manager.  For Ubuntu, you can do this using
 ```
-$ sudo apt install python3-numpy python3-matplotlib python3-serial
+$ sudo apt install python3-numpy python3-matplotlib python3-pandas
 ```
-In order for the `serial` package to work, you will need permission to use the serial device.  Check your system group memberships with
+You will need permission to use the serial device.  Check your system group memberships with
 ```
 $ groups
 ```
