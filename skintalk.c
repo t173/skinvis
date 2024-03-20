@@ -23,10 +23,16 @@
 #include "profile.h"
 #include "layout.h"
 
-#define STOP_CODE  "STOP\r\n"
-#define START_CODE "LOG1\r\n"
-#define BLANK_CODE "\r\n"
-#define CALIB_CODE "CAL\r\n"
+/* #define STOP_CODE  "STOP\r" */
+/* #define START_CODE "LOG1\r" */
+/* #define BLANK_CODE "\r" */
+/* #define MUX_CODE "MUX\r" */
+/* #define CALIB_CODE "CAL\r" */
+
+#define STOP_CODE  "S"
+#define START_CODE "X"
+#define MUX_CODE "M"
+#define CALIB_CODE "C"
 
 #define RECORD_SIZE 5
 
@@ -318,10 +324,10 @@ skin_reader(void *args)
 	struct skin_record record;
 
 	write_code(skin, STOP_CODE);
-	write_code(skin, BLANK_CODE);
+	sleep(1);
+	write_code(skin, MUX_CODE);
 	sleep(1);
 	write_code(skin, CALIB_CODE);
-	write_code(skin, BLANK_CODE);
 	sleep(1);
 	write_code(skin, START_CODE);
 	skin->total_bytes += read_bytes(skin, buffer, BUFFER_SIZE);

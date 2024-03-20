@@ -54,7 +54,7 @@ def parse_cmdline():
     parser.add_argument('--debug', help='write debugging log')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
     parser.add_argument('--delay', type=float, default=0, help='delay between plot updates in milliseoncds')
-    parser.add_argument('--nocalibrate', action='store_true', help='do not perform baseline calibration on startup')
+    parser.add_argument('--nocalibrate', action='store_true', default=True, help='do not perform baseline calibration on startup')
     parser.add_argument('--noconfigure', action='store_true', help='do not configure serial')
     cmdline = parser.parse_args()
 
@@ -239,9 +239,7 @@ def setup_octocan():
     if not cmdline.noconfigure:
         print("Configuring", device)
         try:
-            run_stty('raw')
-            run_stty('-echo', '-echoe', '-echok')
-            run_stty(str(cmdline.baud))
+            run_stty('raw', '-echo', '-echoe', '-echok', str(cmdline.baud))
         except subprocess.CalledProcessError:
             print("Error configuring", device, file=sys.stderr)
             sys.exit(1)
