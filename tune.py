@@ -45,7 +45,7 @@ def parse_cmdline():
     global cmdline
     parser = argparse.ArgumentParser()
     parser.add_argument('--device')
-    parser.add_argument('--layout', default="octocan.layout")
+    parser.add_argument('--layout', default="octocan.layout") 
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
