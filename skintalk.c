@@ -23,8 +23,8 @@
 #include "profile.h"
 #include "layout.h"
 
-#define STOP_CODE  "S"
-#define START_CODE "X"
+#define STOP_CODE  "0"
+#define START_CODE "1"
 
 #define RECORD_SIZE 5
 

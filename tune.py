@@ -27,7 +27,7 @@ import skin
 mpl.rcParams['toolbar'] = 'None'
 
 # List of devices to try (if not given on cmdline)
-devices = ['/dev/ttyACM0', '/dev/ttyACM1']
+devices = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0']
 baud_rate = 115200  # default, overrideable at cmdline
 
 shutdown = False
@@ -239,9 +239,7 @@ def setup_octocan():
     if not cmdline.noconfigure:
         print("Configuring", device)
         try:
-            run_stty('raw')
-            run_stty('-echo', '-echoe', '-echok')
-            run_stty(str(cmdline.baud))
+            run_stty('raw', '-echo', '-echoe', '-echok', str(cmdline.baud))
         except subprocess.CalledProcessError:
             print("Error configuring", device, file=sys.stderr)
             sys.exit(1)
