@@ -26,6 +26,11 @@
 #define STOP_CODE  "0"
 #define START_CODE "1"
 
+/* #define STOP_CODE  "S" */
+/* #define START_CODE "X" */
+/* #define MUX_CODE "M" */
+/* #define CALIB_CODE "C" */
+
 #define RECORD_SIZE 5
 
 // Size of read buffer
@@ -316,6 +321,10 @@ skin_reader(void *args)
 	struct skin_record record;
 
 	write_code(skin, STOP_CODE);
+	sleep(1);
+	write_code(skin, MUX_CODE);
+	sleep(1);
+	write_code(skin, CALIB_CODE);
 	sleep(1);
 	write_code(skin, START_CODE);
 	skin->total_bytes += read_bytes(skin, buffer, BUFFER_SIZE);
