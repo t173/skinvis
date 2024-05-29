@@ -1,7 +1,7 @@
 
-SRCS = layout.c profile.c skintalk.c cmdline.c
-DEPS = layout.h profile.h skintalk.h util.h cmdline.h
-TARG = skintalk
+SRCS = layout.c profile.c skintalk.c
+DEPS = layout.h profile.h skintalk.h util.h
+#TARG =
 
 python = /usr/bin/python3
 python_config = $(python)-config
@@ -17,7 +17,7 @@ LDFLAGS = $(shell $(python_config) --ldflags)
 
 .PHONY: all clean extension
 
-all: extension
+all: $(OBJS) extension
 #all: $(TARG) extension
 
 clean:
@@ -26,11 +26,8 @@ clean:
 extension: setup.py skinmodule.c $(OBJS)
 	$(python) setup.py build
 
-$(TARG): $(OBJS) | $(DEPS) Makefile
-	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+# $(TARG): $(OBJS) | $(DEPS) Makefile
+# 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 %.o: %.c $(DEPS) Makefile
 	$(CC) $(CCFLAGS) -DEXECNAME=$(TARG) -c -o $@ $<
-
-fake: fake.c util.h
-	$(CC) $(CCFLAGS) -o $@ $< -lm -lrt -lpthread

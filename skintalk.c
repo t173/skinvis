@@ -322,10 +322,10 @@ skin_reader(void *args)
 
 	write_code(skin, STOP_CODE);
 	sleep(1);
-	write_code(skin, MUX_CODE);
-	sleep(1);
-	write_code(skin, CALIB_CODE);
-	sleep(1);
+	/* write_code(skin, MUX_CODE); */
+	/* sleep(1); */
+	/* write_code(skin, CALIB_CODE); */
+	/* sleep(1); */
 	write_code(skin, START_CODE);
 	skin->total_bytes += read_bytes(skin, buffer, BUFFER_SIZE);
 
