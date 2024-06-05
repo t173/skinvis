@@ -116,7 +116,7 @@ While reading data from the device's MCU, *skintalk* applies a
 calibration transformation to each cell value.  For each raw value
 read from serial, the calibrated value uses the quadratic
 
-![x' = c0 + c1 (x - b) + c2 (x - b)^2](doc/calibration.png)
+![x' = c0 + c1 (x - b) + c2 (x - b)^2](calibration.png)
 
 where *b* is a **baseline calibration** value that is determined at
 runtime as the average of noise while not pressing the sensor.  The
