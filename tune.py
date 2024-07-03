@@ -194,8 +194,11 @@ class ParamEditor:
         self.cell_line.uninstall()
         old_c1 = self.sensor.get_c1(cmdline.patch, self.cell)
         sign = -1 if old_c1 < 0 else 1
-        c1 = sign*self.target/self.mx_max
-        self.set_c1(c1)
+        if self.mx_max != 0:
+            c1 = sign*self.target/self.mx_max
+            self.set_c1(c1)
+        else:
+            print("Ignoring zero max for cell", self.cell)
         self.textbox.color = '0.95'
         self.textbox.hovercolor = '1'
         self.mx_mode = False
