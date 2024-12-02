@@ -64,7 +64,10 @@ struct skin {
 	// Performance statistics
 	long total_bytes;   // odometer of bytes read from device
 	long misalignments;
-	long addr_tally[ADDR_LENGTH]; // tally of records by addr_check 
+	long addr_tally[ADDR_LENGTH]; // tally of records by addr_check
+
+	int last_patch;  // last patch id read
+	int last_cell;  // last cell id read
 };
 
 //int skin_init_octocan(struct skin *skin);

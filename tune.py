@@ -27,7 +27,7 @@ import skin
 mpl.rcParams['toolbar'] = 'None'
 
 # List of devices to try (if not given on cmdline)
-devices = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0']
+devices = ['/dev/ttyUSB0']
 baud_rate = 115200  # default, overrideable at cmdline
 
 shutdown = False
@@ -45,13 +45,14 @@ def parse_cmdline():
     global cmdline
     parser = argparse.ArgumentParser()
     parser.add_argument('--device')
-    parser.add_argument('--layout', default="octocan.layout") 
+    parser.add_argument('--layout', default="octocan.layout")
     parser.add_argument('--baud', '-b', type=int, default=baud_rate, help='use baud rate')
     parser.add_argument('--alpha', type=float, default=0.8)
     parser.add_argument('--pressure_alpha', type=float, default=0.1)
     parser.add_argument('--patch', '-p', type=int, default=1)
     parser.add_argument('--profile', metavar='CSVFILE', default='octocan3_test.calib', help='dynamic range calibration from CSVFILE')
-    parser.add_argument('--debug', help='write debugging log')
+    parser.add_argument('--log', metavar='CSV', help='log data to CSV file')
+    parser.add_argument('--debug', help='write debugging log (for developer)')
     parser.add_argument('--history', type=int, default=100, help='line plot history size')
     parser.add_argument('--delay', type=float, default=0, help='delay between plot updates in milliseoncds')
     parser.add_argument('--nocalibrate', action='store_true', default=True, help='do not perform baseline calibration on startup')
@@ -253,6 +254,8 @@ def setup_octocan():
     sensor.set_pressure_alpha(cmdline.pressure_alpha)
     if cmdline.profile:
         sensor.read_profile(cmdline.profile)
+    if cmdline.log:
+        sensor.log(cmdline.log)
     return sensor
 
 def stats_updater(sensor, view, sleep=2):

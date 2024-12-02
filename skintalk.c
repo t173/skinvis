@@ -198,6 +198,8 @@ skin_from_layout(struct skin *skin, const char *device, const char *lofile)
 			skin->idx[pl->patch_id][pl->cell_id[i]] = count++;
 		}
 	}
+	skin->last_patch = -1U;
+	skin->last_cell = -1U;
 
 	skin->total_cells = count;
 	ALLOCN(skin->value, count);
@@ -256,8 +258,10 @@ write_csv_row(struct skin *skin)
 	get_time(&now);
 	fprintf(skin->log, "%ld.%09ld", (long)now.tv_sec, (long)now.tv_nsec);
 	for ( int p=0; p < skin->num_patches; p++ ) {
+		const int patch_id = skin->layout.patch[p].patch_id;
 		for ( int c=0; c < skin->layout.patch[p].num_cells; c++ ) {
-			fprintf(skin->log, ",%g", skin_cell(skin, p, c));
+			const int cell_id = skin->layout.patch[p].cell_id[c];
+			fprintf(skin->log, ",%g", skin_cell(skin, patch_id, cell_id));
 		}
 	}
 	fprintf(skin->log, "\n");
@@ -374,16 +378,17 @@ skin_reader(void *args)
 			EVENT(skin, "cell invalid", "%d", record.cell);
 			continue;
 		}
-		skin_cell_write(skin, record.patch, record.cell, record.value);
 
 		// Append to log if last column for CSV row
 		if ( skin->log && !skin->calibrating
-			 && record.patch == skin->layout.max_patch_id
-			 && record.cell == skin->layout.patch[skin->layout.patch_idx[record.patch]].max_cell_id ) {
+			 && (record.patch < skin->last_patch || ((record.patch == skin->last_patch) && (record.cell <= skin->last_cell))) ) {
 			//pthread_mutex_lock(&skin->lock);
 			write_csv_row(skin);
 			//pthread_mutex_unlock(&skin->lock);
 		}
+		skin_cell_write(skin, record.patch, record.cell, record.value);
+		skin->last_patch = record.patch;
+		skin->last_cell = record.cell;
 	}
 	write_code(skin, STOP_CODE);
 	if ( skin->log ) {
