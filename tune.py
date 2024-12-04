@@ -198,6 +198,7 @@ class ParamEditor:
         if self.mx_max != 0:
             c1 = sign*self.target/self.mx_max
             self.set_c1(c1)
+            print("Max seen was", self.mx_max, " and now using new c1 =", c1)
         else:
             print("Ignoring zero max for cell", self.cell)
         self.textbox.color = '0.95'
